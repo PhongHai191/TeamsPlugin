@@ -1,0 +1,40 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.17",
+  "version": "1.0.0",
+  "id": "{{TEAMS_APP_ID}}",
+  "developer": {
+    "name": "Seta International",
+    "websiteUrl": "{{FRONTEND_URL}}",
+    "privacyUrl": "{{FRONTEND_URL}}/privacy",
+    "termsOfUseUrl": "{{FRONTEND_URL}}/terms"
+  },
+  "name": {
+    "short": "Server Restart",
+    "full": "AWS EC2 Server Restart Manager"
+  },
+  "description": {
+    "short": "Request and manage EC2 server restarts",
+    "full": "Allows employees to submit EC2 restart requests and admins to approve or deny them directly within Microsoft Teams."
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#0078D4",
+  "staticTabs": [
+    {
+      "entityId": "restartDashboard",
+      "name": "Server Restarts",
+      "contentUrl": "{{FRONTEND_URL}}",
+      "websiteUrl": "{{FRONTEND_URL}}",
+      "scopes": ["personal"]
+    }
+  ],
+  "permissions": ["identity", "messageTeamMembers"],
+  "validDomains": ["{{FRONTEND_DOMAIN}}"],
+  "webApplicationInfo": {
+    "id": "{{AZURE_AD_APP_CLIENT_ID}}",
+    "resource": "api://{{FRONTEND_DOMAIN}}/{{AZURE_AD_APP_CLIENT_ID}}"
+  }
+}
