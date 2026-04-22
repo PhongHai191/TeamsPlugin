@@ -29,8 +29,10 @@ interface Props {
 export function EC2LogsModal({ instanceId, instanceName }: Props) {
   const [open, setOpen] = useState(false)
 
+  const validId = /^i-[0-9a-f]+$/.test(instanceId)
+
   const { data: events, loading, error } = useQuery(
-    () => getRebootHistory(instanceId),
+    () => validId && open ? getRebootHistory(instanceId) : Promise.resolve([]),
     [open, instanceId],
   )
 

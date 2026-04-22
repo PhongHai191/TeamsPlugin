@@ -75,12 +75,24 @@ func TeamsAuth(db *service.DynamoDBService) gin.HandlerFunc {
 	}
 }
 
-// RequireAdmin aborts if the caller is not an admin.
+// RequireAdmin aborts if the caller is not admin or root.
 func RequireAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role, _ := c.Get(ContextKeyRole)
-		if role != string(model.RoleAdmin) {
+		if role != string(model.RoleAdmin) && role != string(model.RoleRoot) {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "admin only"})
+			return
+		}
+		c.Next()
+	}
+}
+
+// RequireRoot aborts if the caller is not root.
+func RequireRoot() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role, _ := c.Get(ContextKeyRole)
+		if role != string(model.RoleRoot) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "root only"})
 			return
 		}
 		c.Next()

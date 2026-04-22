@@ -60,6 +60,7 @@ export function useTeamsAuth() {
               displayName: 'Dev User',
               email: 'dev@example.com',
               role,
+              totpEnabled: false,
             },
             token: mockToken,
             loading: false,

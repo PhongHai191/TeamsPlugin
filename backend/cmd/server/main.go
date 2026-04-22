@@ -26,6 +26,8 @@ func main() {
 
 	reqHandler := handler.NewRequestsHandler(dbSvc, ec2Svc)
 	ec2Handler := handler.NewEC2Handler(ec2Svc)
+	usersHandler := handler.NewUsersHandler(dbSvc)
+	totpHandler := handler.NewTOTPHandler(dbSvc, ec2Svc)
 
 	r := gin.Default()
 
@@ -38,6 +40,7 @@ func main() {
 
 	auth := middleware.TeamsAuth(dbSvc)
 	adminOnly := middleware.RequireAdmin()
+	rootOnly := middleware.RequireRoot()
 
 	api := r.Group("/api", auth)
 	{
@@ -46,13 +49,22 @@ func main() {
 		api.GET("/requests/me", reqHandler.ListMyRequests)
 		api.GET("/ec2/instances", ec2Handler.ListInstances)
 
-		// Admin endpoints
+		// Admin + Root endpoints
 		admin := api.Group("/admin", adminOnly)
 		{
 			admin.GET("/requests", reqHandler.ListAllRequests)
-			admin.POST("/requests/approve", reqHandler.ApproveRequest)
+			admin.POST("/requests/approve", totpHandler.ApproveWithOTP)
 			admin.POST("/requests/deny", reqHandler.DenyRequest)
 			admin.GET("/ec2/:instanceId/reboot-history", ec2Handler.GetRebootHistory)
+			admin.GET("/users", usersHandler.ListUsers)
+			admin.GET("/totp/setup", totpHandler.Setup)
+			admin.POST("/totp/verify-setup", totpHandler.VerifySetup)
+		}
+
+		// Root-only endpoints
+		root := api.Group("/root", rootOnly)
+		{
+			root.POST("/users/role", usersHandler.UpdateUserRole)
 		}
 	}
 

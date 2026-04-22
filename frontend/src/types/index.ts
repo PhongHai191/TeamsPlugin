@@ -1,4 +1,4 @@
-export type Role = 'admin' | 'user'
+export type Role = 'root' | 'admin' | 'user'
 export type RequestStatus = 'pending' | 'approved' | 'denied'
 
 export interface EC2Instance {
@@ -30,9 +30,17 @@ export interface RebootEvent {
   instanceId: string
 }
 
+export interface User {
+  teamsUserId: string
+  displayName: string
+  email: string
+  role: Role
+}
+
 export interface CurrentUser {
   teamsUserId: string
   displayName: string
   email: string
   role: Role
+  totpEnabled?: boolean
 }

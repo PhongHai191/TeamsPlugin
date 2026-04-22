@@ -152,3 +152,89 @@ func (s *DynamoDBService) UpdateRequestStatus(ctx context.Context, requestID str
 	})
 	return err
 }
+
+// GetUser fetches a single user by teamsUserId.
+func (s *DynamoDBService) GetUser(ctx context.Context, teamsUserID string) (*model.User, error) {
+	out, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: aws.String(tableUsers),
+		Key: map[string]types.AttributeValue{
+			"teamsUserId": &types.AttributeValueMemberS{Value: teamsUserID},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if out.Item == nil {
+		return nil, nil
+	}
+	var user model.User
+	err = attributevalue.UnmarshalMap(out.Item, &user)
+	return &user, err
+}
+
+// SaveTOTPSecret persists the TOTP secret (not yet enabled).
+func (s *DynamoDBService) SaveTOTPSecret(ctx context.Context, teamsUserID, secret string) error {
+	_, err := s.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(tableUsers),
+		Key: map[string]types.AttributeValue{
+			"teamsUserId": &types.AttributeValueMemberS{Value: teamsUserID},
+		},
+		UpdateExpression:         aws.String("SET totpSecret = :s, totpEnabled = :f"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":s": &types.AttributeValueMemberS{Value: secret},
+			":f": &types.AttributeValueMemberBOOL{Value: false},
+		},
+	})
+	return err
+}
+
+// EnableTOTP marks TOTP as active after first successful verification.
+func (s *DynamoDBService) EnableTOTP(ctx context.Context, teamsUserID string) error {
+	_, err := s.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(tableUsers),
+		Key: map[string]types.AttributeValue{
+			"teamsUserId": &types.AttributeValueMemberS{Value: teamsUserID},
+		},
+		UpdateExpression:         aws.String("SET totpEnabled = :t"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":t": &types.AttributeValueMemberBOOL{Value: true},
+		},
+	})
+	return err
+}
+
+// ListUsers returns all users, optionally filtered by role.
+func (s *DynamoDBService) ListUsers(ctx context.Context, roleFilter string) ([]model.User, error) {
+	input := &dynamodb.ScanInput{TableName: aws.String(tableUsers)}
+	if roleFilter != "" {
+		input.FilterExpression = aws.String("#r = :role")
+		input.ExpressionAttributeNames = map[string]string{"#r": "role"}
+		input.ExpressionAttributeValues = map[string]types.AttributeValue{
+			":role": &types.AttributeValueMemberS{Value: roleFilter},
+		}
+	}
+	out, err := s.client.Scan(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	var users []model.User
+	return users, attributevalue.UnmarshalListOfMaps(out.Items, &users)
+}
+
+// UpdateUserRole changes the role of a user. Only allows admin↔user transitions for admin callers;
+// root can set any role.
+func (s *DynamoDBService) UpdateUserRole(ctx context.Context, teamsUserID string, newRole model.Role) error {
+	_, err := s.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(tableUsers),
+		Key: map[string]types.AttributeValue{
+			"teamsUserId": &types.AttributeValueMemberS{Value: teamsUserID},
+		},
+		UpdateExpression:         aws.String("SET #r = :role"),
+		ExpressionAttributeNames: map[string]string{"#r": "role"},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":role": &types.AttributeValueMemberS{Value: string(newRole)},
+		},
+		ConditionExpression: aws.String("attribute_exists(teamsUserId)"),
+	})
+	return err
+}

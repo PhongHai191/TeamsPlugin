@@ -5,9 +5,15 @@ import "time"
 type Role string
 
 const (
+	RoleRoot  Role = "root"
 	RoleAdmin Role = "admin"
 	RoleUser  Role = "user"
 )
+
+type UpdateUserRoleBody struct {
+	TeamsUserID string `json:"teamsUserId" binding:"required"`
+	Role        Role   `json:"role"        binding:"required"`
+}
 
 type Status string
 
@@ -22,6 +28,22 @@ type User struct {
 	DisplayName string `dynamodbav:"displayName" json:"displayName"`
 	Email       string `dynamodbav:"email"       json:"email"`
 	Role        Role   `dynamodbav:"role"        json:"role"`
+	TOTPSecret  string `dynamodbav:"totpSecret"  json:"-"`
+	TOTPEnabled bool   `dynamodbav:"totpEnabled" json:"totpEnabled"`
+}
+
+type TOTPSetupResponse struct {
+	OtpauthURL string `json:"otpauthUrl"`
+	Secret     string `json:"secret"`
+}
+
+type TOTPVerifySetupBody struct {
+	Code string `json:"code" binding:"required"`
+}
+
+type ApproveWithOTPBody struct {
+	RequestID string `json:"requestId" binding:"required"`
+	TOTPCode  string `json:"totpCode"  binding:"required"`
 }
 
 type RestartRequest struct {

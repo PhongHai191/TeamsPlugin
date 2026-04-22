@@ -5,6 +5,8 @@ import {
   Caption1,
   Card,
   CardHeader,
+  MessageBar,
+  MessageBarBody,
   Select,
   Spinner,
   Table,
@@ -18,17 +20,19 @@ import {
   makeStyles,
   tokens,
 } from '@fluentui/react-components'
-import { CheckmarkCircle20Regular, Dismiss20Regular } from '@fluentui/react-icons'
+import { CheckmarkCircle20Regular, Dismiss20Regular, ShieldLock20Regular } from '@fluentui/react-icons'
+import { ApproveOTPModal } from '../components/ApproveOTPModal'
 import { DenyReasonModal } from '../components/DenyReasonModal'
 import { EC2LogsModal } from '../components/EC2LogsModal'
 import { StatusBadge } from '../components/StatusBadge'
+import { TOTPSetupModal } from '../components/TOTPSetupModal'
 import { useQuery } from '../hooks/useQuery'
-import { approveRequest, denyRequest, listAllRequests } from '../lib/api'
-import type { RestartRequest } from '../types'
+import { denyRequest, listAllRequests } from '../lib/api'
+import type { CurrentUser, RestartRequest } from '../types'
 
 const useStyles = makeStyles({
   page: { padding: '24px', maxWidth: '1100px', margin: '0 auto' },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
   actions: { display: 'flex', gap: '8px' },
   filter: { display: 'flex', alignItems: 'center', gap: '8px' },
   pendingCount: {
@@ -42,10 +46,17 @@ const useStyles = makeStyles({
 
 const columns = ['Instance', 'Requested By', 'Reason', 'Requested At', 'Status', 'Actions', 'EC2 Logs']
 
-export function AdminDashboard() {
+interface Props {
+  user: CurrentUser
+}
+
+export function AdminDashboard({ user }: Props) {
   const styles = useStyles()
   const [statusFilter, setStatusFilter] = useState('')
   const [denyTarget, setDenyTarget] = useState<string | null>(null)
+  const [approveTarget, setApproveTarget] = useState<RestartRequest | null>(null)
+  const [totpSetupOpen, setTotpSetupOpen] = useState(false)
+  const [totpEnabled, setTotpEnabled] = useState(user.totpEnabled ?? false)
 
   const { data: requests, loading, error, refetch } = useQuery(
     () => listAllRequests(statusFilter),
@@ -53,11 +64,6 @@ export function AdminDashboard() {
   )
 
   const pendingCount = (requests ?? []).filter(r => r.status === 'pending').length
-
-  const handleApprove = async (req: RestartRequest) => {
-    await approveRequest(req.requestId)
-    refetch()
-  }
 
   const handleDenyConfirm = async (reason: string) => {
     if (!denyTarget) return
@@ -68,6 +74,24 @@ export function AdminDashboard() {
 
   return (
     <div className={styles.page}>
+      {/* 2FA setup banner */}
+      {!totpEnabled && (
+        <MessageBar intent="warning" style={{ marginBottom: 16 }}>
+          <MessageBarBody>
+            Two-factor authentication is not set up. You must enable 2FA to approve restart requests.
+            <Button
+              appearance="transparent"
+              size="small"
+              icon={<ShieldLock20Regular />}
+              onClick={() => setTotpSetupOpen(true)}
+              style={{ marginLeft: 8 }}
+            >
+              Set up 2FA
+            </Button>
+          </MessageBarBody>
+        </MessageBar>
+      )}
+
       <div className={styles.header}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <Title2>Admin — Restart Requests</Title2>
@@ -75,14 +99,26 @@ export function AdminDashboard() {
             <span className={styles.pendingCount}>{pendingCount} pending</span>
           )}
         </div>
-        <div className={styles.filter}>
-          <Caption1>Filter:</Caption1>
-          <Select value={statusFilter} onChange={(_, d) => setStatusFilter(d.value)}>
-            <option value="">All</option>
-            <option value="pending">Pending</option>
-            <option value="approved">Approved</option>
-            <option value="denied">Denied</option>
-          </Select>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          {totpEnabled && (
+            <Button
+              appearance="subtle"
+              size="small"
+              icon={<ShieldLock20Regular />}
+              onClick={() => setTotpSetupOpen(true)}
+            >
+              Re-setup 2FA
+            </Button>
+          )}
+          <div className={styles.filter}>
+            <Caption1>Filter:</Caption1>
+            <Select value={statusFilter} onChange={(_, d) => setStatusFilter(d.value)}>
+              <option value="">All</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="denied">Denied</option>
+            </Select>
+          </div>
         </div>
       </div>
 
@@ -104,7 +140,7 @@ export function AdminDashboard() {
             <TableBody>
               {(requests ?? []).length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6}>
+                  <TableCell colSpan={7}>
                     <Caption1>No requests found.</Caption1>
                   </TableCell>
                 </TableRow>
@@ -134,7 +170,9 @@ export function AdminDashboard() {
                           appearance="primary"
                           size="small"
                           icon={<CheckmarkCircle20Regular />}
-                          onClick={() => handleApprove(req)}
+                          onClick={() => setApproveTarget(req)}
+                          disabled={!totpEnabled}
+                          title={!totpEnabled ? 'Set up 2FA first' : ''}
                         >
                           Approve
                         </Button>
@@ -163,6 +201,20 @@ export function AdminDashboard() {
         open={denyTarget !== null}
         onClose={() => setDenyTarget(null)}
         onConfirm={handleDenyConfirm}
+      />
+
+      <ApproveOTPModal
+        open={approveTarget !== null}
+        requestId={approveTarget?.requestId ?? ''}
+        instanceName={approveTarget?.instanceName ?? ''}
+        onClose={() => setApproveTarget(null)}
+        onApproved={refetch}
+      />
+
+      <TOTPSetupModal
+        open={totpSetupOpen}
+        onClose={() => setTotpSetupOpen(false)}
+        onEnabled={() => setTotpEnabled(true)}
       />
     </div>
   )

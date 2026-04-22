@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { EC2Instance, RebootEvent, RestartRequest } from '../types'
+import type { EC2Instance, RebootEvent, RestartRequest, Role, User } from '../types'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api',
@@ -36,3 +36,19 @@ export const denyRequest = (requestId: string, denyReason: string): Promise<void
 
 export const getRebootHistory = (instanceId: string): Promise<RebootEvent[]> =>
   api.get(`/admin/ec2/${instanceId}/reboot-history`).then(r => r.data)
+
+export const listUsers = (): Promise<User[]> =>
+  api.get('/admin/users').then(r => r.data)
+
+export const updateUserRole = (teamsUserId: string, role: Role): Promise<void> =>
+  api.post('/root/users/role', { teamsUserId, role }).then(r => r.data)
+
+// TOTP
+export const getTOTPSetup = (): Promise<{ otpauthUrl: string; secret: string }> =>
+  api.get('/admin/totp/setup').then(r => r.data)
+
+export const verifyTOTPSetup = (code: string): Promise<void> =>
+  api.post('/admin/totp/verify-setup', { code }).then(r => r.data)
+
+export const approveRequestWithOTP = (requestId: string, totpCode: string): Promise<void> =>
+  api.post('/admin/requests/approve', { requestId, totpCode }).then(r => r.data)
