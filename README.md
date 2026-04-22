@@ -1,17 +1,16 @@
 # TeamAWSExtension
 
-Microsoft Teams Tab App for managing AWS EC2 server restart requests.
-
-Employees submit restart requests through a Teams dashboard. Admins review, approve (triggering an actual EC2 reboot via AWS SDK), or deny requests with a reason. All parties see real-time status updates.
+Microsoft Teams Tab App for managing AWS EC2 server restart requests with role-based access control and TOTP-protected approvals.
 
 ---
 
 ## Features
 
-- **Employee**: Request restart for any tagged EC2 instance, view request history with status (pending / approved / denied) and denial reason
-- **Admin**: View all requests, filter by status, approve with one click (auto-reboots EC2), or deny with a typed reason
-- **Auth**: Teams SSO — no separate login required; roles managed in DynamoDB
-- **UI**: Fluent UI v9 — looks and feels native inside Microsoft Teams
+- **Employee**: Request restart for tagged EC2 instances, track request status (pending / approved / denied) with denial reason
+- **Admin**: View all requests, approve (requires TOTP code → auto-reboots EC2) or deny with reason, view EC2 reboot history from CloudTrail, view users with role `user`
+- **Root**: All admin permissions + manage user roles (promote user → admin, demote admin → user), view all users
+- **TOTP 2FA**: Admin/root must set up Google Authenticator before they can approve any request
+- **UI**: Fluent UI v9 — native Teams look and feel
 
 ---
 
@@ -22,11 +21,24 @@ Teams Tab (React + Vite)
         │
         │  Teams SSO token (JWT)
         ▼
-Go API Server (Gin)
+Go API Server (Gin) — port 8081
         │
         ├── DynamoDB ── users, restart-requests
-        └── AWS EC2 ── DescribeInstances, RebootInstances
+        ├── AWS EC2  ── DescribeInstances, RebootInstances
+        └── CloudTrail── LookupEvents (reboot history)
 ```
+
+---
+
+## Roles
+
+| Role | What they can do |
+|------|-----------------|
+| `user` | Submit restart requests, view own requests |
+| `admin` | View/approve (TOTP required)/deny all requests, view EC2 logs, view users |
+| `root` | All admin permissions + promote/demote users (admin ↔ user) |
+
+> New users are auto-created with role `user` on first login. `root` must be set manually in DynamoDB.
 
 ---
 
@@ -34,8 +46,11 @@ Go API Server (Gin)
 
 - Node.js 18+
 - Go 1.21+
-- AWS account with DynamoDB tables and EC2 instances tagged `Restartable=true`
-- Microsoft Azure AD App Registration (for Teams SSO)
+- AWS account with:
+  - DynamoDB tables (`users`, `restart-requests`)
+  - EC2 instances tagged `Restartable=true`
+  - IAM permissions for EC2, DynamoDB, CloudTrail
+- Microsoft Azure AD App Registration (for production Teams SSO)
 
 ---
 
@@ -43,7 +58,7 @@ Go API Server (Gin)
 
 ### 1. AWS Setup
 
-Create DynamoDB tables:
+**DynamoDB tables:**
 
 ```bash
 # users table
@@ -51,7 +66,8 @@ aws dynamodb create-table \
   --table-name users \
   --attribute-definitions AttributeName=teamsUserId,AttributeType=S \
   --key-schema AttributeName=teamsUserId,KeyType=HASH \
-  --billing-mode PAY_PER_REQUEST
+  --billing-mode PAY_PER_REQUEST \
+  --region ap-southeast-1
 
 # restart-requests table
 aws dynamodb create-table \
@@ -62,6 +78,7 @@ aws dynamodb create-table \
     AttributeName=createdAt,AttributeType=S \
   --key-schema AttributeName=requestId,KeyType=HASH \
   --billing-mode PAY_PER_REQUEST \
+  --region ap-southeast-1 \
   --global-secondary-indexes '[{
     "IndexName": "userId-createdAt-index",
     "KeySchema": [
@@ -72,21 +89,20 @@ aws dynamodb create-table \
   }]'
 ```
 
-Tag EC2 instances to make them available in the app:
-
+**Tag EC2 instances:**
 ```bash
 aws ec2 create-tags --resources i-xxxxxxxxxxxxxxxxx --tags Key=Restartable,Value=true
 ```
 
-Promote a user to admin (after they log in once):
-
+**Set root user** (after first login):
 ```bash
 aws dynamodb update-item \
   --table-name users \
   --key '{"teamsUserId": {"S": "<teams-oid>"}}' \
-  --update-expression "SET #r = :admin" \
+  --update-expression "SET #r = :root" \
   --expression-attribute-names '{"#r": "role"}' \
-  --expression-attribute-values '{":admin": {"S": "admin"}}'
+  --expression-attribute-values '{":root": {"S": "root"}}' \
+  --region ap-southeast-1
 ```
 
 ### 2. Backend
@@ -94,48 +110,62 @@ aws dynamodb update-item \
 ```bash
 cd backend
 export AWS_REGION=ap-southeast-1
-export FRONTEND_URL=http://localhost:5173   # or your deployed URL
-go run ./cmd/server
+export FRONTEND_URL=http://localhost:5173
+export PORT=8081
+export DEV_ROLE=admin   # root | admin | user for local dev
+go build -o /tmp/server ./cmd/server && /tmp/server
 ```
-
-Server starts on `:8080`.
 
 ### 3. Frontend
 
 ```bash
 cd frontend
 cp .env.example .env
-# Optionally set VITE_DEV_ROLE=admin to test admin view without Teams
 npm run dev
+# Opens at http://localhost:5173
 ```
 
-App runs on `http://localhost:5173`. API calls are proxied to `:8080`.
+**Switch roles without restart** — append URL param:
+- `http://localhost:5173?role=root` → Root view
+- `http://localhost:5173?role=admin` → Admin view
+- `http://localhost:5173?role=user` → Employee view
+
+---
+
+## TOTP Setup (Admin/Root)
+
+First time opening the app as admin/root, a warning banner appears:
+
+1. Click **Set up 2FA**
+2. Scan the QR code with **Google Authenticator** or **Authy**
+3. Enter the 6-digit code to confirm
+4. Done — the Approve button is now active
+
+Each approval requires entering a fresh 6-digit code from the authenticator app.
+
+> **Local dev:** TOTP is automatically bypassed when using the dev mock token.
 
 ---
 
 ## Deploying to Production
 
-### Frontend
-Build and upload to S3 + CloudFront (must be HTTPS for Teams):
-
+### Frontend — S3 + CloudFront
 ```bash
 cd frontend
 npm run build
-aws s3 sync dist/ s3://your-bucket-name --delete
+aws s3 sync dist/ s3://your-bucket --delete
 ```
 
-### Backend
-Build and run on EC2 or as a Lambda behind API Gateway:
-
+### Backend — EC2 or Lambda
 ```bash
 cd backend
 go build -o bin/server ./cmd/server
 ```
 
 ### Teams App
-1. Fill in `teams/manifest.json` placeholders (`{{TEAMS_APP_ID}}`, `{{FRONTEND_URL}}`, etc.)
-2. Zip the `teams/` folder: `manifest.json`, `color.png`, `outline.png`
-3. Upload to Microsoft Teams Admin Center or sideload via Developer Portal
+1. Fill placeholders in `teams/manifest.json`
+2. Zip: `manifest.json` + `color.png` + `outline.png`
+3. Upload to Teams Admin Center or Developer Portal
 
 ---
 
@@ -147,14 +177,15 @@ go build -o bin/server ./cmd/server
 |---|---|---|
 | `AWS_REGION` | `ap-southeast-1` | AWS region |
 | `FRONTEND_URL` | `http://localhost:5173` | Allowed CORS origin |
-| `PORT` | `8080` | HTTP port |
+| `PORT` | `8080` | HTTP listen port |
+| `DEV_ROLE` | `user` | Mock role in dev mode (`root`\|`admin`\|`user`) |
 
 ### Frontend (`.env`)
 
 | Variable | Description |
 |---|---|
-| `VITE_API_URL` | Backend API base URL (default: `http://localhost:8080/api`) |
-| `VITE_DEV_ROLE` | `user` or `admin` — mock role for local dev outside Teams |
+| `VITE_API_URL` | `/api` for local dev (Vite proxy), full URL for production |
+| `VITE_DEV_ROLE` | Fallback mock role if no `?role=` URL param |
 
 ---
 
@@ -163,33 +194,63 @@ go build -o bin/server ./cmd/server
 ```
 TeamAWSExtension/
 ├── backend/
-│   ├── cmd/server/main.go          # Entry point, routes
+│   ├── cmd/server/main.go              # Entry point, routes
 │   └── internal/
 │       ├── handler/
-│       │   ├── ec2.go              # GET /api/ec2/instances
-│       │   └── requests.go         # CRUD for restart requests
+│       │   ├── ec2.go                  # EC2 list + reboot history
+│       │   ├── requests.go             # CRUD restart requests
+│       │   ├── totp.go                 # TOTP setup, verify, approve-with-OTP
+│       │   └── users.go                # List users, update role
 │       ├── middleware/
-│       │   └── auth.go             # Teams JWT validation + role check
+│       │   └── auth.go                 # Teams JWT validation, RequireAdmin, RequireRoot
 │       ├── model/
-│       │   └── types.go            # Shared types and DTOs
+│       │   └── types.go                # Shared types and DTOs
 │       └── service/
-│           ├── dynamodb.go         # DynamoDB operations
-│           └── ec2.go              # EC2 list + reboot
+│           ├── dynamodb.go             # DynamoDB operations
+│           └── ec2.go                  # EC2 + CloudTrail operations
 ├── frontend/
 │   └── src/
 │       ├── components/
-│       │   ├── DenyReasonModal.tsx
-│       │   ├── NewRequestModal.tsx
-│       │   └── StatusBadge.tsx
+│       │   ├── ApproveOTPModal.tsx     # TOTP code input before approving
+│       │   ├── DenyReasonModal.tsx     # Denial reason input
+│       │   ├── EC2LogsModal.tsx        # CloudTrail reboot history
+│       │   ├── NewRequestModal.tsx     # Employee request form
+│       │   ├── StatusBadge.tsx         # Colored status badge
+│       │   └── TOTPSetupModal.tsx      # QR code + verify setup
 │       ├── hooks/
-│       │   ├── useQuery.ts         # Generic async data fetcher
-│       │   └── useTeamsAuth.ts     # Teams SSO initialization
-│       ├── lib/api.ts              # Axios API client
+│       │   ├── useQuery.ts             # Generic async data fetcher
+│       │   └── useTeamsAuth.ts         # Teams SSO + dev fallback
+│       ├── lib/api.ts                  # Axios API client
 │       ├── pages/
-│       │   ├── AdminDashboard.tsx
-│       │   └── EmployeeDashboard.tsx
-│       ├── types/index.ts
-│       └── App.tsx                 # Role-based routing
+│       │   ├── AdminDashboard.tsx      # Requests table + approve/deny
+│       │   ├── EmployeeDashboard.tsx   # My requests + new request
+│       │   └── UserManagement.tsx      # User list + role management
+│       ├── types/index.ts              # Shared TypeScript types
+│       └── App.tsx                     # Auth, role routing, tab navigation
 └── teams/
-    └── manifest.json               # Teams App manifest (fill placeholders)
+    └── manifest.json                   # Teams App manifest (fill placeholders)
+```
+
+---
+
+## AWS IAM Policy
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "ec2:DescribeInstances",
+      "ec2:RebootInstances",
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:Query",
+      "dynamodb:Scan",
+      "cloudtrail:LookupEvents"
+    ],
+    "Resource": "*"
+  }]
+}
 ```

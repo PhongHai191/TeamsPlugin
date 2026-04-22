@@ -1,6 +1,6 @@
 # TeamAWSExtension — CLAUDE.md
 
-Microsoft Teams Tab App for managing EC2 server restart requests.
+Microsoft Teams Tab App for managing EC2 server restart requests with role-based access and TOTP-protected approvals.
 
 ## Project Structure
 
@@ -13,10 +13,11 @@ TeamAWSExtension/
 
 ## Tech Stack
 
-- **Frontend**: React 19, Vite, TypeScript, Fluent UI v9, `@microsoft/teams-js` v2
-- **Backend**: Go, Gin, AWS SDK v2 (DynamoDB + EC2), `golang-jwt/jwt`
+- **Frontend**: React 19, Vite, TypeScript, Fluent UI v9, `@microsoft/teams-js` v2, `qrcode.react`
+- **Backend**: Go, Gin, AWS SDK v2 (DynamoDB + EC2 + CloudTrail), `golang-jwt/jwt`, `pquerna/otp`
 - **Database**: DynamoDB (2 tables: `users`, `restart-requests`)
 - **Auth**: Teams SSO — backend validates MS Entra JWT, no separate login
+- **2FA**: TOTP (Google Authenticator compatible) required for approve action
 
 ## Running Locally
 
@@ -25,46 +26,78 @@ TeamAWSExtension/
 cd backend
 export AWS_REGION=ap-southeast-1
 export FRONTEND_URL=http://localhost:5173
-go run ./cmd/server
-# Listens on :8080
+export PORT=8081
+export DEV_ROLE=admin   # root | admin | user
+go build -o /tmp/server ./cmd/server && /tmp/server
 ```
+
+> **Note:** Port 8081 is used because Apache (`httpd.exe`) occupies 8080 on this machine.
 
 ### Frontend
 ```bash
 cd frontend
 cp .env.example .env
-# Edit VITE_DEV_ROLE=admin to test admin view locally
-npm run dev
-# Listens on :5173, proxies /api → localhost:8080
+# VITE_API_URL=/api  (relative — goes through Vite proxy)
+npm run dev   # :5173, proxies /api → localhost:8081
 ```
 
-### Dev notes
-- Outside Teams, `useTeamsAuth` falls back to a mock user (DEV only)
-- Set `VITE_DEV_ROLE=admin` in `.env` to render AdminDashboard locally
-- The Vite dev server proxies `/api/*` to the Go backend (see `vite.config.ts`)
+### Switch roles without restart
+Append `?role=root`, `?role=admin`, or `?role=user` to the URL.  
+Example: `http://localhost:5173?role=root`
+
+### Dev TOTP bypass
+In dev mode (`GIN_MODE != release`), if the token is `dev-mock-token`, TOTP verification is skipped automatically.
 
 ## API Endpoints
 
 | Method | Path | Role | Description |
 |--------|------|------|-------------|
-| GET | `/api/ec2/instances` | any | List restartable EC2 instances |
-| POST | `/api/requests` | user | Submit restart request |
-| GET | `/api/requests/me` | user | List caller's own requests |
-| GET | `/api/admin/requests` | admin | List all requests (filter: `?status=pending`) |
-| POST | `/api/admin/requests/approve` | admin | Approve + reboot EC2 |
-| POST | `/api/admin/requests/deny` | admin | Deny with reason |
+| GET | `/api/ec2/instances` | any | List EC2 instances tagged `Restartable=true` |
+| POST | `/api/requests` | any | Submit restart request |
+| GET | `/api/requests/me` | any | List caller's own requests |
+| GET | `/api/admin/requests` | admin, root | List all requests (`?status=pending\|approved\|denied`) |
+| POST | `/api/admin/requests/approve` | admin, root | Approve + reboot (requires `totpCode`) |
+| POST | `/api/admin/requests/deny` | admin, root | Deny with reason |
+| GET | `/api/admin/ec2/:instanceId/reboot-history` | admin, root | CloudTrail reboot history |
+| GET | `/api/admin/users` | admin, root | List users (admin sees `user` role only; root sees all) |
+| POST | `/api/root/users/role` | root | Change user role (admin ↔ user) |
+| GET | `/api/admin/totp/setup` | admin, root | Generate TOTP secret + otpauth URL |
+| POST | `/api/admin/totp/verify-setup` | admin, root | Verify first code and enable TOTP |
+
+## Roles
+
+| Role | Permissions |
+|------|-------------|
+| `root` | All admin permissions + view all users (root/admin/user) + change roles (admin↔user) |
+| `admin` | View/approve/deny requests, view EC2 logs, view users with role `user` |
+| `user` | Submit restart requests, view own request history and status |
+
+- New users auto-created on first login with role `user`
+- `root` role must be set manually in DynamoDB (cannot be assigned via UI)
+- Admin/root cannot change their own role
 
 ## DynamoDB Tables
 
 ### `users`
 - PK: `teamsUserId` (string)
-- Attributes: `displayName`, `email`, `role` (`admin` | `user`)
-- New users auto-created on first login with role `user`; promote to `admin` manually
+- Attributes: `displayName`, `email`, `role` (`root`|`admin`|`user`), `totpSecret`, `totpEnabled`
 
 ### `restart-requests`
 - PK: `requestId` (UUID)
-- GSI: `userId-createdAt-index` (for employee "my requests" query)
+- GSI: `userId-createdAt-index`
 - Attributes: `userId`, `userName`, `instanceId`, `instanceName`, `reason`, `status`, `denyReason`, `createdAt`, `updatedAt`
+
+## TOTP Flow
+
+**Setup (one-time per admin):**
+1. Admin opens app → warning banner if TOTP not set up
+2. Click "Set up 2FA" → QR code modal appears
+3. Scan with Google Authenticator / Authy
+4. Enter 6-digit code to confirm → `totpEnabled = true` saved to DynamoDB
+
+**Approve with TOTP:**
+1. Admin clicks Approve → OTP modal appears
+2. Enter 6-digit code → backend verifies → EC2 rebooted
 
 ## EC2 Tag Convention
 
@@ -74,9 +107,9 @@ Only instances tagged `Restartable=true` appear in the dropdown.
 aws ec2 create-tags --resources i-xxxx --tags Key=Restartable,Value=true
 ```
 
-## Teams Manifest
+## Teams Manifest Placeholders
 
-`teams/manifest.json` contains placeholders:
+`teams/manifest.json` contains:
 - `{{TEAMS_APP_ID}}` — generate with `uuidgen`
 - `{{FRONTEND_URL}}` — deployed frontend URL (must be HTTPS)
 - `{{FRONTEND_DOMAIN}}` — domain only (no protocol)
@@ -84,7 +117,6 @@ aws ec2 create-tags --resources i-xxxx --tags Key=Restartable,Value=true
 
 ## AWS IAM Required Permissions
 
-The IAM role/user running the backend needs:
 ```json
 {
   "Effect": "Allow",
@@ -95,7 +127,8 @@ The IAM role/user running the backend needs:
     "dynamodb:PutItem",
     "dynamodb:UpdateItem",
     "dynamodb:Query",
-    "dynamodb:Scan"
+    "dynamodb:Scan",
+    "cloudtrail:LookupEvents"
   ],
   "Resource": "*"
 }
@@ -103,7 +136,9 @@ The IAM role/user running the backend needs:
 
 ## Key Design Decisions
 
-- Role stored in DynamoDB, not in Teams token — backend is authoritative for role checks
-- `ec2:RebootInstances` is called only after DB status is verified as `pending` to prevent double-reboot
-- No bot — pure Tab app with dashboard UI using Fluent UI (Teams native look)
-- Auth middleware validates Teams JWT but does not fully verify signature in dev; production should use a proper JWKS library
+- Role stored in DynamoDB, not in Teams token — backend is authoritative
+- `ec2:RebootInstances` called only after TOTP verified and status confirmed `pending`
+- TOTP secret stored in DynamoDB per-user; `totpEnabled` flag separates setup-in-progress from active
+- EC2 reboot history fetched from CloudTrail `LookupEvents` filtered by `RebootInstances`
+- Port 8081 used locally due to Apache conflict on 8080
+- `VITE_API_URL=/api` (relative path) routes through Vite proxy — avoids CORS entirely in dev
