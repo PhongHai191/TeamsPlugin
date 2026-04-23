@@ -1,154 +1,124 @@
-import {
-  Badge,
-  Body1,
-  Button,
-  Caption1,
-  Card,
-  CardHeader,
-  Menu,
-  MenuItem,
-  MenuList,
-  MenuPopover,
-  MenuTrigger,
-  Spinner,
-  Table,
-  TableBody,
-  TableCell,
-  TableHeader,
-  TableHeaderCell,
-  TableRow,
-  Text,
-  Title2,
-  makeStyles,
-} from '@fluentui/react-components'
-import { ChevronDown20Regular } from '@fluentui/react-icons'
-import { useState } from 'react'
-import { useQuery } from '../hooks/useQuery'
+import { useState, useEffect } from 'react'
 import { listUsers, updateUserRole } from '../lib/api'
 import type { Role, User } from '../types'
-
-const useStyles = makeStyles({
-  page: { padding: '24px', maxWidth: '900px', margin: '0 auto' },
-  header: { marginBottom: '24px' },
-})
-
-const roleBadge: Record<Role, { color: 'important' | 'warning' | 'subtle'; label: string }> = {
-  root:  { color: 'important', label: 'Root' },
-  admin: { color: 'warning',   label: 'Admin' },
-  user:  { color: 'subtle',    label: 'User' },
-}
-
-const columns = ['Display Name', 'Email', 'Teams User ID', 'Role', 'Actions']
+import { People24Regular, PeopleTeam24Regular, ArrowClockwise20Regular } from '@fluentui/react-icons'
 
 interface Props {
   callerRole: Role
 }
 
 export function UserManagement({ callerRole }: Props) {
-  const styles = useStyles()
+  const [users, setUsers] = useState<User[]>([])
+  const [loading, setLoading] = useState(false)
   const [updating, setUpdating] = useState<string | null>(null)
-  const { data: users, loading, error, refetch } = useQuery(listUsers)
+
+  const fetchUsers = async () => {
+    setLoading(true)
+    try {
+      setUsers(await listUsers())
+    } catch (e) {
+      console.error('Failed to list users', e)
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    fetchUsers()
+  }, [])
 
   const handleRoleChange = async (user: User, newRole: Role) => {
+    if (!confirm(`Change role of ${user.displayName} to ${newRole}?`)) return
     setUpdating(user.teamsUserId)
     try {
       await updateUserRole(user.teamsUserId, newRole)
-      refetch()
-    } finally {
-      setUpdating(null)
+      fetchUsers()
+    } catch (e: any) {
+      alert('Failed to update role: ' + (e?.response?.data?.error || e.message))
     }
+    setUpdating(null)
   }
 
-  // admin sees only users; root sees everyone
-  const visible = (users ?? []).filter(u =>
-    callerRole === 'root' ? true : u.role === 'user'
-  )
+  // Admin sees only users; root sees everyone
+  const visible = users.filter(u => callerRole === 'root' ? true : u.role === 'user')
 
   return (
-    <div className={styles.page}>
-      <div className={styles.header}>
-        <Title2>User Management</Title2>
-      </div>
+    <div className="view-section active">
+      <header className="top-nav">
+        <div className="top-nav-left">
+          <button className="btn-top-nav"><span className="icon" style={{ display: 'flex' }}><People24Regular fontSize={18} /></span> Directory</button>
+        </div>
+      </header>
 
-      <Card>
-        <CardHeader header={<Body1 weight="semibold">Members ({visible.length})</Body1>} />
+      <div className="content-scroll">
+        <div className="hero-banner">
+          <div className="hero-left">
+            <div className="hero-icon"><PeopleTeam24Regular style={{ fontSize: 42 }} /></div>
+            <div className="greeting-block">
+              <h1>User Management</h1>
+              <p>Manage access roles for the DevOps Center</p>
+            </div>
+          </div>
+          <div className="hero-right">
+            <div className="hero-status-text">{visible.length} users visible</div>
+            <button className="btn-ghost" onClick={fetchUsers} disabled={loading}>
+              {loading ? 'Loading...' : <><ArrowClockwise20Regular style={{ marginRight: 6, verticalAlign: 'middle', marginBottom: 2 }} /> Refresh</>}
+            </button>
+          </div>
+        </div>
 
-        {loading && <Spinner label="Loading..." style={{ padding: '24px' }} />}
-        {error && <Text style={{ color: 'red', padding: '16px' }}>{error}</Text>}
-
-        {!loading && !error && (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                {columns.map(col => (
-                  <TableHeaderCell key={col}>{col}</TableHeaderCell>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {visible.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5}>
-                    <Caption1>No users found.</Caption1>
-                  </TableCell>
-                </TableRow>
-              )}
-              {visible.map((u: User) => {
-                const badge = roleBadge[u.role]
+        <div className="table-container">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Display Name</th>
+                <th>Email</th>
+                <th>Teams User ID</th>
+                <th>Role</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map(u => {
                 const isUpdating = updating === u.teamsUserId
                 return (
-                  <TableRow key={u.teamsUserId}>
-                    <TableCell>{u.displayName}</TableCell>
-                    <TableCell>{u.email}</TableCell>
-                    <TableCell>
-                      <Caption1>{u.teamsUserId}</Caption1>
-                    </TableCell>
-                    <TableCell>
-                      <Badge appearance="filled" color={badge.color}>
-                        {badge.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
+                  <tr key={u.teamsUserId} className="instance-row">
+                    <td className="name-cell">{u.displayName}</td>
+                    <td>{u.email}</td>
+                    <td className="id-cell">{u.teamsUserId}</td>
+                    <td>
+                      <span className="type-badge" style={{
+                        background: u.role === 'root' ? 'rgba(224, 108, 108, 0.1)' : u.role === 'admin' ? 'rgba(245, 166, 35, 0.1)' : 'var(--bg-active)',
+                        color: u.role === 'root' ? 'var(--status-stopped)' : u.role === 'admin' ? 'var(--status-pending)' : 'var(--text-secondary)',
+                        borderColor: u.role === 'root' ? 'rgba(224, 108, 108, 0.3)' : u.role === 'admin' ? 'rgba(245, 166, 35, 0.3)' : 'var(--border-light)'
+                      }}>
+                        {u.role.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="action-cell">
                       {callerRole === 'root' && u.role !== 'root' && (
-                        isUpdating ? (
-                          <Spinner size="tiny" />
-                        ) : (
-                          <Menu>
-                            <MenuTrigger disableButtonEnhancement>
-                              <Button
-                                appearance="subtle"
-                                size="small"
-                                icon={<ChevronDown20Regular />}
-                                iconPosition="after"
-                              >
-                                Change role
-                              </Button>
-                            </MenuTrigger>
-                            <MenuPopover>
-                              <MenuList>
-                                {u.role !== 'admin' && (
-                                  <MenuItem onClick={() => handleRoleChange(u, 'admin')}>
-                                    Promote to Admin
-                                  </MenuItem>
-                                )}
-                                {u.role !== 'user' && (
-                                  <MenuItem onClick={() => handleRoleChange(u, 'user')}>
-                                    Demote to User
-                                  </MenuItem>
-                                )}
-                              </MenuList>
-                            </MenuPopover>
-                          </Menu>
+                        isUpdating ? <span className="no-action">Updating...</span> : (
+                          <>
+                            {u.role !== 'admin' && (
+                              <button className="btn-action" onClick={() => handleRoleChange(u, 'admin')}>Promote to Admin</button>
+                            )}
+                            {u.role !== 'user' && (
+                              <button className="btn-action btn-danger-outline" onClick={() => handleRoleChange(u, 'user')}>Demote to User</button>
+                            )}
+                          </>
                         )
                       )}
-                    </TableCell>
-                  </TableRow>
+                      {(callerRole !== 'root' || u.role === 'root') && <span className="no-action">—</span>}
+                    </td>
+                  </tr>
                 )
               })}
-            </TableBody>
-          </Table>
-        )}
-      </Card>
+              {visible.length === 0 && (
+                <tr><td colSpan={5} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No users found</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }

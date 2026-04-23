@@ -19,11 +19,13 @@ export function useTeamsAuth() {
   })
 
   useEffect(() => {
-    microsoftTeams.app
-      .initialize()
-      .then(async () => {
+    const initTeams = async () => {
+      try {
+        // Timeout after 2 seconds if not in Teams
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject('Teams init timeout'), 2000))
+        await Promise.race([microsoftTeams.app.initialize(), timeoutPromise])
+        
         const context = await microsoftTeams.app.getContext()
-
         const token = await new Promise<string>((resolve, reject) => {
           microsoftTeams.authentication.getAuthToken({
             successCallback: resolve,
@@ -32,26 +34,22 @@ export function useTeamsAuth() {
         })
 
         setAuthToken(token)
-
-        // Decode display name and email from Teams context
-        const user: CurrentUser = {
-          teamsUserId: context.user?.id ?? '',
-          displayName: context.user?.displayName ?? '',
-          email: context.user?.loginHint ?? '',
-          role: 'user', // backend will confirm actual role
-        }
-
-        // Fetch actual role from backend via /requests/me (any authed call)
-        // The role is determined server-side; here we store what we get back
-        // from the first API response or a dedicated /me endpoint if added later.
-        setState({ user, token, loading: false, error: null })
-      })
-      .catch(err => {
-        // Dev fallback: if not running inside Teams, use mock user
+        setState({
+          user: {
+            teamsUserId: context.user?.id ?? '',
+            displayName: context.user?.displayName ?? '',
+            email: context.user?.loginHint ?? '',
+            role: 'user',
+          },
+          token,
+          loading: false,
+          error: null,
+        })
+      } catch (err) {
         if (import.meta.env.DEV) {
+          console.warn('Teams init failed, falling back to mock user:', err)
           const mockToken = 'dev-mock-token'
           setAuthToken(mockToken)
-          // ?role=admin or ?role=user overrides VITE_DEV_ROLE without restart
           const urlRole = new URLSearchParams(window.location.search).get('role') as Role | null
           const role: Role = urlRole ?? (import.meta.env.VITE_DEV_ROLE as Role) ?? 'user'
           setState({
@@ -69,7 +67,9 @@ export function useTeamsAuth() {
         } else {
           setState({ user: null, token: null, loading: false, error: String(err) })
         }
-      })
+      }
+    }
+    initTeams()
   }, [])
 
   return state
