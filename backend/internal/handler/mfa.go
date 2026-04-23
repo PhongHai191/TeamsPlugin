@@ -48,16 +48,17 @@ func (h *MFAHandler) CreateChallenge(c *gin.Context) {
 	opts := generateOptions(display)
 
 	challenge := model.MFAChallenge{
-		ChallengeID:   uuid.NewString(),
-		RequestID:     req.RequestID,
-		AdminID:       adminID.(string),
-		InstanceID:    req.InstanceID,
-		InstanceName:  req.InstanceName,
-		RequestedBy:   req.UserName,
-		DisplayNumber: display,
-		Options:       opts,
-		Status:        "pending",
-		ExpiresAt:     time.Now().Add(2 * time.Minute).Unix(),
+		ChallengeID:    uuid.NewString(),
+		RequestID:      req.RequestID,
+		AdminID:        adminID.(string),
+		InstanceID:     req.InstanceID,
+		InstanceName:   req.InstanceName,
+		InstanceRegion: req.Region,
+		RequestedBy:    req.UserName,
+		DisplayNumber:  display,
+		Options:        opts,
+		Status:         "pending",
+		ExpiresAt:      time.Now().Add(2 * time.Minute).Unix(),
 	}
 
 	if err := h.db.CreateMFAChallenge(c.Request.Context(), challenge); err != nil {
@@ -158,13 +159,13 @@ func (h *MFAHandler) Verify(c *gin.Context) {
 	}
 
 	log.Printf("[MFA] Number matched by %s — rebooting %s", adminID, ch.InstanceID)
-	if err := h.ec2Svc.RebootInstance(c.Request.Context(), ch.InstanceID); err != nil {
+	if err := h.ec2Svc.RebootInstance(c.Request.Context(), ch.InstanceID, ch.InstanceRegion); err != nil {
 		_ = h.db.ResolveMFAChallenge(c.Request.Context(), challengeID, "failed", err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "reboot failed: " + err.Error()})
 		return
 	}
 
-	_ = h.db.UpdateRequestStatus(c.Request.Context(), ch.RequestID, model.StatusApproved, "")
+	_ = h.db.ApproveRequest(c.Request.Context(), ch.RequestID, adminID.(string), "")
 	_ = h.db.ResolveMFAChallenge(c.Request.Context(), challengeID, "approved", "")
 	log.Printf("[MFA] Approved — request %s by %s", ch.RequestID, adminID)
 	c.JSON(http.StatusOK, gin.H{"message": "approved and rebooted"})

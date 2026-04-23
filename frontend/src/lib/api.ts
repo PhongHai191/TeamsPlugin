@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { EC2Instance, RebootEvent, RestartRequest, Role, User } from '../types'
+import type { EC2Instance, RestartRequest, Role, User } from '../types'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api',
@@ -18,6 +18,7 @@ export const createRequest = (payload: {
   instanceId: string
   instanceName: string
   reason: string
+  region: string
 }): Promise<RestartRequest> =>
   api.post('/requests', payload).then(r => r.data)
 
@@ -34,7 +35,7 @@ export const approveRequest = (requestId: string): Promise<void> =>
 export const denyRequest = (requestId: string, denyReason: string): Promise<void> =>
   api.post('/admin/requests/deny', { requestId, denyReason }).then(r => r.data)
 
-export const getRebootHistory = (instanceId: string): Promise<RebootEvent[]> =>
+export const getRebootHistory = (instanceId: string): Promise<RestartRequest[]> =>
   api.get(`/admin/ec2/${instanceId}/reboot-history`).then(r => r.data)
 
 export const listUsers = (): Promise<User[]> =>

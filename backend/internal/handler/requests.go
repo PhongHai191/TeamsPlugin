@@ -40,6 +40,7 @@ func (h *RequestsHandler) CreateRequest(c *gin.Context) {
 		UserName:     userName.(string),
 		InstanceID:   body.InstanceID,
 		InstanceName: body.InstanceName,
+		Region:       body.Region,
 		Reason:       body.Reason,
 	}
 	created, err := h.db.CreateRequest(c.Request.Context(), req)
@@ -94,7 +95,7 @@ func (h *RequestsHandler) ApproveRequest(c *gin.Context) {
 	}
 
 	log.Printf("[APPROVE] Calling EC2 reboot for instance %s", req.InstanceID)
-	if err := h.ec2Svc.RebootInstance(c.Request.Context(), req.InstanceID); err != nil {
+	if err := h.ec2Svc.RebootInstance(c.Request.Context(), req.InstanceID, req.Region); err != nil {
 		log.Printf("[APPROVE] EC2 reboot FAILED: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ec2 reboot failed: " + err.Error()})
 		return

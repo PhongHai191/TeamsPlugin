@@ -54,6 +54,7 @@ type MFAChallenge struct {
 	AdminID       string `dynamodbav:"adminId"`
 	InstanceID    string `dynamodbav:"instanceId"`
 	InstanceName  string `dynamodbav:"instanceName"`
+	InstanceRegion string `dynamodbav:"instanceRegion,omitempty"`
 	RequestedBy   string `dynamodbav:"requestedBy"`
 	DisplayNumber int    `dynamodbav:"displayNumber"`
 	Options       []int  `dynamodbav:"options"`
@@ -71,16 +72,19 @@ type VerifyMFAChallengeBody struct {
 }
 
 type RestartRequest struct {
-	RequestID   string    `dynamodbav:"requestId"   json:"requestId"`
-	UserID      string    `dynamodbav:"userId"      json:"userId"`
-	UserName    string    `dynamodbav:"userName"    json:"userName"`
-	InstanceID  string    `dynamodbav:"instanceId"  json:"instanceId"`
-	InstanceName string   `dynamodbav:"instanceName" json:"instanceName"`
-	Reason      string    `dynamodbav:"reason"      json:"reason"`
-	Status      Status    `dynamodbav:"status"      json:"status"`
-	DenyReason  string    `dynamodbav:"denyReason"  json:"denyReason,omitempty"`
-	CreatedAt   time.Time `dynamodbav:"createdAt"   json:"createdAt"`
-	UpdatedAt   time.Time `dynamodbav:"updatedAt"   json:"updatedAt"`
+	RequestID      string    `dynamodbav:"requestId"                json:"requestId"`
+	UserID         string    `dynamodbav:"userId"                   json:"userId"`
+	UserName       string    `dynamodbav:"userName"                 json:"userName"`
+	InstanceID     string    `dynamodbav:"instanceId"               json:"instanceId"`
+	InstanceName   string    `dynamodbav:"instanceName"             json:"instanceName"`
+	Region         string    `dynamodbav:"region,omitempty"         json:"region,omitempty"`
+	Reason         string    `dynamodbav:"reason"                   json:"reason"`
+	Status         Status    `dynamodbav:"status"                   json:"status"`
+	DenyReason     string    `dynamodbav:"denyReason,omitempty"     json:"denyReason,omitempty"`
+	ApprovedBy     string    `dynamodbav:"approvedBy,omitempty"     json:"approvedBy,omitempty"`
+	ApprovedByName string    `dynamodbav:"approvedByName,omitempty" json:"approvedByName,omitempty"`
+	CreatedAt      time.Time `dynamodbav:"createdAt"                json:"createdAt"`
+	UpdatedAt      time.Time `dynamodbav:"updatedAt"                json:"updatedAt"`
 }
 
 type EC2Instance struct {
@@ -90,13 +94,16 @@ type EC2Instance struct {
 	InstanceType string `json:"instanceType"`
 	PublicIP     string `json:"publicIp,omitempty"`
 	PrivateIP    string `json:"privateIp,omitempty"`
+	Region       string `json:"region"`
+	Project      string `json:"project,omitempty"`
 }
 
 // Request/response DTOs
 type CreateRequestBody struct {
-	InstanceID   string `json:"instanceId" binding:"required"`
+	InstanceID   string `json:"instanceId"   binding:"required"`
 	InstanceName string `json:"instanceName" binding:"required"`
-	Reason       string `json:"reason" binding:"required"`
+	Reason       string `json:"reason"       binding:"required"`
+	Region       string `json:"region"`
 }
 
 type ApproveRequestBody struct {

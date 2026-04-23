@@ -4,24 +4,26 @@ import {
   approveRequestWithOTP, denyRequest, getRebootHistory,
   getTOTPSetup, verifyTOTPSetup, resetTOTP,
 } from '../lib/api'
-import type { CurrentUser, EC2Instance, RestartRequest, RebootEvent } from '../types'
+import type { CurrentUser, EC2Instance, RestartRequest } from '../types'
 import { QRCodeSVG } from 'qrcode.react'
 import {
   Server24Regular, Clipboard24Regular, WeatherPartlyCloudyDay24Regular,
   Flash24Regular, Document24Regular, CheckmarkCircle24Regular,
   DismissCircle24Regular, LockClosed24Regular, ShieldKeyhole24Regular,
-  MailInbox24Regular, ArrowClockwise20Regular,
+  MailInbox24Regular, ArrowClockwise20Regular, Navigation24Regular,
 } from '@fluentui/react-icons'
 
 interface Props {
   user: CurrentUser
   view: 'ec2' | 'requests'
+  onToggleSidebar?: () => void
 }
 
-export function AdminDashboard({ user, view }: Props) {
+export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
   const [instances, setInstances] = useState<EC2Instance[]>([])
   const [requests, setRequests] = useState<RestartRequest[]>([])
   const [ec2Filter, setEc2Filter] = useState('all')
+  const [projectFilter, setProjectFilter] = useState('all')
   const [reqFilter, setReqFilter] = useState('all')
   const [loading, setLoading] = useState(false)
 
@@ -35,11 +37,12 @@ export function AdminDashboard({ user, view }: Props) {
   const [denyTarget, setDenyTarget] = useState<string | null>(null)
   const [logsModalOpen, setLogsModalOpen] = useState(false)
   const [logsTarget, setLogsTarget] = useState<{ id: string; name: string } | null>(null)
-  const [rebootLogs, setRebootLogs] = useState<RebootEvent[]>([])
+  const [rebootLogs, setRebootLogs] = useState<RestartRequest[]>([])
 
   const [otpInput, setOtpInput] = useState('')
   const [otpError, setOtpError] = useState('')
   const [denyInput, setDenyInput] = useState('')
+  const [successToast, setSuccessToast] = useState<string | null>(null)
 
   // TOTP countdown timer
   const [totpSecondsLeft, setTotpSecondsLeft] = useState(30 - (Math.floor(Date.now() / 1000) % 30))
@@ -122,6 +125,8 @@ export function AdminDashboard({ user, view }: Props) {
     try {
       await approveRequestWithOTP(approveTarget.requestId, code)
       setOtpModalOpen(false)
+      setSuccessToast(`Reboot command sent to ${approveTarget.instanceName}`)
+      setTimeout(() => setSuccessToast(null), 4000)
       fetchRequests()
     } catch {
       setOtpError('Invalid code — try the next one')
@@ -158,11 +163,24 @@ export function AdminDashboard({ user, view }: Props) {
   const handleRequestReboot = async (inst: EC2Instance) => {
     const reason = window.prompt(`Submit restart request for ${inst.name}?\nReason:`)
     if (!reason) return
-    try { await createRequest({ instanceId: inst.instanceId, instanceName: inst.name, reason }); alert('Request submitted') }
+    try { await createRequest({ instanceId: inst.instanceId, instanceName: inst.name, reason, region: inst.region }); alert('Request submitted') }
     catch (e: any) { alert('Failed: ' + (e?.response?.data?.error || e.message)) }
   }
 
   const timerColor = totpSecondsLeft <= 5 ? '#ef5350' : totpSecondsLeft <= 10 ? '#f5a623' : '#50c878'
+
+  const toast = successToast && (
+    <div style={{
+      position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
+      background: '#1e7e34', color: '#fff', borderRadius: 8,
+      padding: '12px 20px', fontSize: 14, fontWeight: 500,
+      boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+      display: 'flex', alignItems: 'center', gap: 10,
+    }}>
+      <CheckmarkCircle24Regular fontSize={18} />
+      {successToast}
+    </div>
+  )
 
   const totpWarning = (
     <div style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -284,23 +302,32 @@ export function AdminDashboard({ user, view }: Props) {
 
       {logsModalOpen && (
         <div className="modal">
-          <div className="modal-card" style={{ width: 600 }}>
+          <div className="modal-card" style={{ width: 620 }}>
             <div className="modal-header">
               <span className="modal-icon"><Document24Regular style={{ fontSize: 28 }} /></span>
-              <div><h2>CloudTrail Logs</h2><p className="modal-subtitle">{logsTarget?.name} ({logsTarget?.id})</p></div>
+              <div><h2>Reboot History</h2><p className="modal-subtitle">{logsTarget?.name} ({logsTarget?.id})</p></div>
             </div>
-            <div className="modal-body" style={{ maxHeight: 400, overflowY: 'auto' }}>
+            <div className="modal-body" style={{ maxHeight: 420, overflowY: 'auto' }}>
               {rebootLogs.length === 0
-                ? <p style={{ color: 'var(--text-muted)' }}>No recent reboot events.</p>
-                : <ul style={{ listStyle: 'none', padding: 0 }}>
-                    {rebootLogs.map(log => (
-                      <li key={log.eventId} style={{ borderBottom: '1px solid var(--border-light)', padding: '12px 0' }}>
-                        <div style={{ fontWeight: 500 }}>{log.username}
-                          <span style={{ color: 'var(--text-muted)', fontSize: 12, marginLeft: 8 }}>
-                            {new Date(log.eventTime).toLocaleString()}
+                ? <p style={{ color: 'var(--text-muted)' }}>No reboot records found.</p>
+                : <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                    {rebootLogs.map(r => (
+                      <li key={r.requestId} style={{ borderBottom: '1px solid var(--border-light)', padding: '12px 4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontWeight: 600, fontSize: 13 }}>
+                            <CheckmarkCircle24Regular fontSize={13} style={{ color: 'var(--status-running)', marginRight: 5, verticalAlign: 'middle' }} />
+                            Rebooted
+                          </span>
+                          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                            {new Date(r.updatedAt).toLocaleString()}
                           </span>
                         </div>
-                        <div style={{ color: 'var(--text-secondary)', fontSize: 12, marginTop: 4 }}>Event: {log.eventId}</div>
+                        <div style={{ marginTop: 6, fontSize: 12, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <span><span style={{ color: 'var(--text-muted)' }}>Requested by:</span> <strong>{r.userName}</strong></span>
+                          <span><span style={{ color: 'var(--text-muted)' }}>Approved by:</span> <strong>{r.approvedByName || r.approvedBy || '—'}</strong></span>
+                          <span><span style={{ color: 'var(--text-muted)' }}>Reason:</span> {r.reason}</span>
+                          <span style={{ color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: 11, marginTop: 2 }}>{r.requestId}</span>
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -318,14 +345,22 @@ export function AdminDashboard({ user, view }: Props) {
   // ── EC2 View ──────────────────────────────────────────────────────────────────
 
   if (view === 'ec2') {
-    const filtered = ec2Filter === 'all' ? instances : instances.filter(i => i.state === ec2Filter)
+    const projects = [...new Set(instances.map(i => i.project).filter(Boolean))] as string[]
+    const filtered = instances
+      .filter(i => ec2Filter === 'all' || i.state === ec2Filter)
+      .filter(i => projectFilter === 'all' || i.project === projectFilter)
     return (
       <div className="view-section active">
         <header className="top-nav">
           <div className="top-nav-left">
+            <button className="mobile-menu-btn" onClick={onToggleSidebar}>
+              <Navigation24Regular />
+            </button>
             <button className="btn-top-nav"><span className="icon" style={{ display: 'flex' }}><Server24Regular fontSize={18} /></span> EC2 List</button>
           </div>
-          {totpWarning}
+          <div className="top-nav-right">
+            {totpWarning}
+          </div>
         </header>
         <div className="content-scroll">
           <div className="hero-banner">
@@ -346,29 +381,42 @@ export function AdminDashboard({ user, view }: Props) {
               <button key={f} className={`tab ${ec2Filter === f ? 'active' : ''}`} onClick={() => setEc2Filter(f)}>{f.charAt(0).toUpperCase() + f.slice(1)}</button>
             ))}
           </div>
+          {projects.length > 0 && (
+            <div className="filter-tabs" style={{ marginTop: 4 }}>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', alignSelf: 'center', marginRight: 4 }}>Project:</span>
+              {['all', ...projects].map(p => (
+                <button key={p} className={`tab ${projectFilter === p ? 'active' : ''}`} onClick={() => setProjectFilter(p)}>
+                  {p === 'all' ? 'All' : p}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="table-container">
             <table className="data-table">
-              <thead><tr><th>Server Name</th><th>Instance ID</th><th>Status</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Server Name</th><th>Instance ID</th><th>Region</th><th>Project</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody>
                 {filtered.map(inst => (
                   <tr key={inst.instanceId} className="instance-row">
                     <td className="name-cell"><span className="server-icon" style={{ verticalAlign: 'middle', display: 'inline-block' }}><Server24Regular fontSize={16} /></span>{inst.name}</td>
                     <td className="id-cell">{inst.instanceId}</td>
+                    <td className="id-cell" style={{ fontSize: 12 }}>{inst.region}</td>
+                    <td className="id-cell" style={{ fontSize: 12, color: inst.project ? 'inherit' : 'var(--text-muted)' }}>{inst.project || '—'}</td>
                     <td><div className="status-badge"><span className={`status-dot dot-${inst.state === 'running' ? 'running' : 'stopped'}`} />{inst.state}</div></td>
                     <td className="action-cell">
                       {inst.state === 'running'
                         ? <button className="btn-action btn-danger-outline" onClick={() => handleRequestReboot(inst)}><Flash24Regular fontSize={14} style={{ marginRight: 6 }} />Request Reboot</button>
                         : <span className="no-action">—</span>}
-                      <button className="btn-icon-action" title="CloudTrail Logs" onClick={() => openLogs(inst.instanceId, inst.name)}><Document24Regular fontSize={16} /></button>
+                      <button className="btn-icon-action" title="Reboot History" onClick={() => openLogs(inst.instanceId, inst.name)}><Document24Regular fontSize={16} /></button>
                     </td>
                   </tr>
                 ))}
-                {filtered.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No instances found</td></tr>}
+                {filtered.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No instances found</td></tr>}
               </tbody>
             </table>
           </div>
         </div>
         {modals}
+        {toast}
       </div>
     )
   }
@@ -380,9 +428,14 @@ export function AdminDashboard({ user, view }: Props) {
     <div className="view-section active">
       <header className="top-nav">
         <div className="top-nav-left">
+          <button className="mobile-menu-btn" onClick={onToggleSidebar}>
+            <Navigation24Regular />
+          </button>
           <button className="btn-top-nav"><span className="icon" style={{ display: 'flex' }}><Clipboard24Regular fontSize={18} /></span> Global Request Queue</button>
         </div>
-        {totpWarning}
+        <div className="top-nav-right">
+          {totpWarning}
+        </div>
       </header>
       <div className="content-scroll">
         <div className="hero-banner req-banner">
@@ -432,6 +485,7 @@ export function AdminDashboard({ user, view }: Props) {
         </div>
       </div>
       {modals}
+      {toast}
     </div>
   )
 }

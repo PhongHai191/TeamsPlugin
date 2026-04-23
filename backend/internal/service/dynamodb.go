@@ -154,6 +154,43 @@ func (s *DynamoDBService) UpdateRequestStatus(ctx context.Context, requestID str
 	return err
 }
 
+// ApproveRequest marks a request as approved and records who approved it.
+func (s *DynamoDBService) ApproveRequest(ctx context.Context, requestID, approvedBy, approvedByName string) error {
+	_, err := s.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(tableRequests),
+		Key: map[string]types.AttributeValue{
+			"requestId": &types.AttributeValueMemberS{Value: requestID},
+		},
+		UpdateExpression: aws.String("SET #s = :status, updatedAt = :now, approvedBy = :ab, approvedByName = :abn"),
+		ExpressionAttributeNames: map[string]string{"#s": "status"},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":status": &types.AttributeValueMemberS{Value: string(model.StatusApproved)},
+			":now":    &types.AttributeValueMemberS{Value: time.Now().UTC().Format(time.RFC3339)},
+			":ab":     &types.AttributeValueMemberS{Value: approvedBy},
+			":abn":    &types.AttributeValueMemberS{Value: approvedByName},
+		},
+	})
+	return err
+}
+
+// ListApprovedByInstance returns all approved requests for a given instance, most recent first.
+func (s *DynamoDBService) ListApprovedByInstance(ctx context.Context, instanceID string) ([]model.RestartRequest, error) {
+	out, err := s.client.Scan(ctx, &dynamodb.ScanInput{
+		TableName:        aws.String(tableRequests),
+		FilterExpression: aws.String("instanceId = :iid AND #s = :approved"),
+		ExpressionAttributeNames: map[string]string{"#s": "status"},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":iid":      &types.AttributeValueMemberS{Value: instanceID},
+			":approved": &types.AttributeValueMemberS{Value: string(model.StatusApproved)},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var requests []model.RestartRequest
+	return requests, attributevalue.UnmarshalListOfMaps(out.Items, &requests)
+}
+
 // GetUser fetches a single user by teamsUserId.
 func (s *DynamoDBService) GetUser(ctx context.Context, teamsUserID string) (*model.User, error) {
 	out, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{

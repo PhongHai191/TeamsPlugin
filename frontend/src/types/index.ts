@@ -8,6 +8,8 @@ export interface EC2Instance {
   instanceType: string
   publicIp?: string
   privateIp?: string
+  region: string
+  project?: string
 }
 
 export interface RestartRequest {
@@ -16,18 +18,14 @@ export interface RestartRequest {
   userName: string
   instanceId: string
   instanceName: string
+  region?: string
   reason: string
   status: RequestStatus
   denyReason?: string
+  approvedBy?: string
+  approvedByName?: string
   createdAt: string
   updatedAt: string
-}
-
-export interface RebootEvent {
-  eventId: string
-  eventTime: string
-  username: string
-  instanceId: string
 }
 
 export interface User {

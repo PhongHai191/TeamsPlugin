@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import { listUsers, updateUserRole } from '../lib/api'
 import type { Role, User } from '../types'
-import { People24Regular, PeopleTeam24Regular, ArrowClockwise20Regular } from '@fluentui/react-icons'
+import { People24Regular, PeopleTeam24Regular, ArrowClockwise20Regular, Navigation24Regular } from '@fluentui/react-icons'
 
 interface Props {
   callerRole: Role
+  onToggleSidebar?: () => void
 }
 
-export function UserManagement({ callerRole }: Props) {
+export function UserManagement({ callerRole, onToggleSidebar }: Props) {
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(false)
   const [updating, setUpdating] = useState<string | null>(null)
@@ -45,6 +46,9 @@ export function UserManagement({ callerRole }: Props) {
     <div className="view-section active">
       <header className="top-nav">
         <div className="top-nav-left">
+          <button className="mobile-menu-btn" onClick={onToggleSidebar}>
+            <Navigation24Regular />
+          </button>
           <button className="btn-top-nav"><span className="icon" style={{ display: 'flex' }}><People24Regular fontSize={18} /></span> Directory</button>
         </div>
       </header>

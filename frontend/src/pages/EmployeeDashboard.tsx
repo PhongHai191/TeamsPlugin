@@ -6,15 +6,17 @@ import {
   Clipboard24Regular,
   WeatherPartlyCloudyDay24Regular,
   MailInbox24Regular,
-  ArrowClockwise20Regular
+  ArrowClockwise20Regular,
+  Navigation24Regular
 } from '@fluentui/react-icons'
 
 interface Props {
   user: CurrentUser
   view: 'ec2' | 'requests'
+  onToggleSidebar?: () => void
 }
 
-export function EmployeeDashboard({ user, view }: Props) {
+export function EmployeeDashboard({ user, view, onToggleSidebar }: Props) {
   const [instances, setInstances] = useState<EC2Instance[]>([])
   const [requests, setRequests] = useState<RestartRequest[]>([])
   const [ec2Filter, setEc2Filter] = useState('all')
@@ -52,7 +54,7 @@ export function EmployeeDashboard({ user, view }: Props) {
     const reason = window.prompt(`Submit restart request for ${inst.name}?\nReason:`)
     if (!reason) return
     try {
-      await createRequest({ instanceId: inst.instanceId, instanceName: inst.name, reason })
+      await createRequest({ instanceId: inst.instanceId, instanceName: inst.name, reason, region: inst.region })
       alert('Request submitted successfully')
       fetchRequests()
     } catch (e: any) {
@@ -68,6 +70,9 @@ export function EmployeeDashboard({ user, view }: Props) {
       <div className="view-section active">
         <header className="top-nav">
           <div className="top-nav-left">
+            <button className="mobile-menu-btn" onClick={onToggleSidebar}>
+              <Navigation24Regular />
+            </button>
             <button className="btn-top-nav"><span className="icon" style={{ display: 'flex' }}><Server24Regular fontSize={18} /></span> EC2 List</button>
           </div>
         </header>
@@ -146,6 +151,9 @@ export function EmployeeDashboard({ user, view }: Props) {
     <div className="view-section active">
       <header className="top-nav">
         <div className="top-nav-left">
+          <button className="mobile-menu-btn" onClick={onToggleSidebar}>
+            <Navigation24Regular />
+          </button>
           <button className="btn-top-nav"><span className="icon" style={{ display: 'flex' }}><Clipboard24Regular fontSize={18} /></span> My Requests</button>
         </div>
       </header>

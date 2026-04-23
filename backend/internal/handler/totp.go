@@ -158,11 +158,13 @@ func (h *TOTPHandler) ApproveWithOTP(c *gin.Context) {
 	}
 
 	log.Printf("[APPROVE] TOTP verified — rebooting %s", req.InstanceID)
-	if err := h.ec2Svc.RebootInstance(c.Request.Context(), req.InstanceID); err != nil {
+	if err := h.ec2Svc.RebootInstance(c.Request.Context(), req.InstanceID, req.Region); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ec2 reboot failed: " + err.Error()})
 		return
 	}
-	if err := h.db.UpdateRequestStatus(c.Request.Context(), body.RequestID, model.StatusApproved, ""); err != nil {
+	displayName, _ := c.Get(middleware.ContextKeyUserName)
+	approvedByName, _ := displayName.(string)
+	if err := h.db.ApproveRequest(c.Request.Context(), body.RequestID, userID.(string), approvedByName); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

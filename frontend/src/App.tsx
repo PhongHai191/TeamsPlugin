@@ -10,7 +10,9 @@ import {
   People24Regular,
   Cloud24Regular,
   Branch24Regular,
-  ShieldCheckmark24Filled
+  ShieldCheckmark24Filled,
+  Navigation24Regular,
+  Dismiss24Regular
 } from '@fluentui/react-icons'
 
 export type View = 'ec2' | 'requests' | 'users'
@@ -25,6 +27,7 @@ export default function App() {
   const { user, loading, error, isDevMode, setDevRole } = useTeamsAuth()
   const [currentView, setCurrentView] = useState<View>('ec2')
   const [pendingCount, setPendingCount] = useState(0)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
   const isPrivileged = user?.role === 'admin' || user?.role === 'root'
 
@@ -43,6 +46,9 @@ export default function App() {
     return () => clearInterval(timer)
   }, [isPrivileged])
 
+  const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen)
+  const closeSidebar = () => setIsSidebarOpen(false)
+
   console.log('App state:', { loading, error, user: !!user });
 
   if (loading) {
@@ -59,11 +65,20 @@ export default function App() {
 
   return (
     <div className="app-container">
+      {/* MOBILE OVERLAY */}
+      <div 
+        className={`sidebar-overlay ${isSidebarOpen ? 'open' : ''}`} 
+        onClick={closeSidebar}
+      />
+
       {/* SIDEBAR */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
           <div className="logo-box"><ShieldCheckmark24Filled style={{ fontSize: 18 }} /></div>
           <span className="app-name">DevOps Center</span>
+          <button className="mobile-menu-btn" onClick={closeSidebar} style={{ marginLeft: 'auto', marginRight: 0 }}>
+            <Dismiss24Regular />
+          </button>
         </div>
 
         {isDevMode && (
@@ -98,7 +113,7 @@ export default function App() {
           <a 
             className={`nav-item ${currentView === 'ec2' ? 'active' : ''}`} 
             href="#" 
-            onClick={(e) => { e.preventDefault(); setCurrentView('ec2') }}
+            onClick={(e) => { e.preventDefault(); setCurrentView('ec2'); closeSidebar() }}
           >
             <div className="nav-indicator"></div>
             <span className="nav-icon"><Server24Regular /></span>
@@ -108,7 +123,7 @@ export default function App() {
           <a 
             className={`nav-item ${currentView === 'requests' ? 'active' : ''}`} 
             href="#" 
-            onClick={(e) => { e.preventDefault(); setCurrentView('requests') }}
+            onClick={(e) => { e.preventDefault(); setCurrentView('requests'); closeSidebar() }}
           >
             <div className="nav-indicator"></div>
             <span className="nav-icon"><Clipboard24Regular /></span>
@@ -124,7 +139,7 @@ export default function App() {
               <a 
                 className={`nav-item ${currentView === 'users' ? 'active' : ''}`} 
                 href="#" 
-                onClick={(e) => { e.preventDefault(); setCurrentView('users') }}
+                onClick={(e) => { e.preventDefault(); setCurrentView('users'); closeSidebar() }}
               >
                 <div className="nav-indicator"></div>
                 <span className="nav-icon"><People24Regular /></span>
@@ -152,12 +167,12 @@ export default function App() {
       <main className="main-content">
         {isPrivileged
           ? <>
-              {(currentView === 'ec2' || currentView === 'requests') && <AdminDashboard user={user} view={currentView} />}
-              {currentView === 'users' && <UserManagement callerRole={user.role} />}
+              {(currentView === 'ec2' || currentView === 'requests') && <AdminDashboard user={user} view={currentView} onToggleSidebar={toggleSidebar} />}
+              {currentView === 'users' && <UserManagement callerRole={user.role} onToggleSidebar={toggleSidebar} />}
             </>
           : <>
-              {currentView === 'ec2' && <EmployeeDashboard user={user} view="ec2" />}
-              {currentView === 'requests' && <EmployeeDashboard user={user} view="requests" />}
+              {currentView === 'ec2' && <EmployeeDashboard user={user} view="ec2" onToggleSidebar={toggleSidebar} />}
+              {currentView === 'requests' && <EmployeeDashboard user={user} view="requests" onToggleSidebar={toggleSidebar} />}
             </>
         }
       </main>

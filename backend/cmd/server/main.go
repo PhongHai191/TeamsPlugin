@@ -20,18 +20,26 @@ import (
 var ginLambda *ginadapter.GinLambdaV2
 
 func main() {
+	defaultRegion := getEnv("APP_REGION", "us-west-2")
+	var regions []string
+	for _, r := range strings.Split(getEnv("APP_REGIONS", defaultRegion), ",") {
+		if r = strings.TrimSpace(r); r != "" {
+			regions = append(regions, r)
+		}
+	}
+
 	awsCfg, err := config.LoadDefaultConfig(context.Background(),
-		config.WithRegion(getEnv("APP_REGION", "us-west-2")),
+		config.WithRegion(regions[0]),
 	)
 	if err != nil {
 		log.Fatalf("failed to load AWS config: %v", err)
 	}
 
 	dbSvc := service.NewDynamoDBService(awsCfg)
-	ec2Svc := service.NewEC2Service(awsCfg)
+	ec2Svc := service.NewEC2Service(awsCfg, regions)
 
 	reqHandler := handler.NewRequestsHandler(dbSvc, ec2Svc)
-	ec2Handler := handler.NewEC2Handler(ec2Svc)
+	ec2Handler := handler.NewEC2Handler(ec2Svc, dbSvc)
 	usersHandler := handler.NewUsersHandler(dbSvc)
 	totpHandler := handler.NewTOTPHandler(dbSvc, ec2Svc)
 	mfaHandler := handler.NewMFAHandler(dbSvc, ec2Svc)
