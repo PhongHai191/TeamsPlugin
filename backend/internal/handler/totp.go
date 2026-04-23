@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 	"github.com/seta-international/team-aws-extension/internal/middleware"
 	"github.com/seta-international/team-aws-extension/internal/model"
@@ -23,11 +24,33 @@ func NewTOTPHandler(db *service.DynamoDBService, ec2Svc *service.EC2Service) *TO
 }
 
 // GET /api/admin/totp/setup
-// Generates a new TOTP secret and returns the otpauth:// URL for QR rendering.
-// Saves the (not-yet-enabled) secret to DynamoDB.
+// Returns existing QR if secret already exists (not yet enabled), or generates a new one.
+// Once totpEnabled=true, refuses to regenerate to protect the active secret.
 func (h *TOTPHandler) Setup(c *gin.Context) {
 	userID, _ := c.Get(middleware.ContextKeyUserID)
 	displayName, _ := c.Get(middleware.ContextKeyUserName)
+
+	user, err := h.db.GetUser(c.Request.Context(), userID.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "user lookup failed"})
+		return
+	}
+
+	if user != nil && user.TOTPEnabled {
+		c.JSON(http.StatusConflict, gin.H{"error": "2FA already active — disable it before re-linking"})
+		return
+	}
+
+	// Reuse existing unverified secret so re-opening the modal shows the same QR
+	if user != nil && user.TOTPSecret != "" {
+		key, err := otp.NewKeyFromURL(
+			"otpauth://totp/" + issuer + ":" + displayName.(string) + "?secret=" + user.TOTPSecret + "&issuer=" + issuer,
+		)
+		if err == nil {
+			c.JSON(http.StatusOK, model.TOTPSetupResponse{OtpauthURL: key.URL(), Secret: user.TOTPSecret})
+			return
+		}
+	}
 
 	key, err := totp.Generate(totp.GenerateOpts{
 		Issuer:      issuer,
@@ -37,17 +60,12 @@ func (h *TOTPHandler) Setup(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate TOTP secret"})
 		return
 	}
-
 	if err := h.db.SaveTOTPSecret(c.Request.Context(), userID.(string), key.Secret()); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save TOTP secret"})
 		return
 	}
-
-	log.Printf("[TOTP] Setup initiated for user %s", userID)
-	c.JSON(http.StatusOK, model.TOTPSetupResponse{
-		OtpauthURL: key.URL(),
-		Secret:     key.Secret(),
-	})
+	log.Printf("[TOTP] New secret generated for user %s", userID)
+	c.JSON(http.StatusOK, model.TOTPSetupResponse{OtpauthURL: key.URL(), Secret: key.Secret()})
 }
 
 // POST /api/admin/totp/verify-setup
@@ -82,6 +100,18 @@ func (h *TOTPHandler) VerifySetup(c *gin.Context) {
 
 	log.Printf("[TOTP] Enabled for user %s", userID)
 	c.JSON(http.StatusOK, gin.H{"message": "TOTP enabled"})
+}
+
+// POST /api/admin/totp/reset
+// Clears the existing TOTP secret so the admin can re-link a new authenticator.
+func (h *TOTPHandler) Reset(c *gin.Context) {
+	userID, _ := c.Get(middleware.ContextKeyUserID)
+	if err := h.db.ClearTOTPSecret(c.Request.Context(), userID.(string)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reset TOTP"})
+		return
+	}
+	log.Printf("[TOTP] Reset by user %s", userID)
+	c.JSON(http.StatusOK, gin.H{"message": "TOTP reset — you can now set up a new authenticator"})
 }
 
 // POST /api/admin/requests/approve (replaces the original handler)

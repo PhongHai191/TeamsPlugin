@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	tableRequests = "restart-requests"
-	tableUsers    = "users"
+	tableRequests  = "restart-requests"
+	tableUsers     = "users"
+	tableMFAChallenges = "mfa-challenges"
 )
 
 type DynamoDBService struct {
@@ -188,6 +189,21 @@ func (s *DynamoDBService) SaveTOTPSecret(ctx context.Context, teamsUserID, secre
 	return err
 }
 
+// ClearTOTPSecret removes the TOTP secret and disables TOTP for a user.
+func (s *DynamoDBService) ClearTOTPSecret(ctx context.Context, teamsUserID string) error {
+	_, err := s.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(tableUsers),
+		Key: map[string]types.AttributeValue{
+			"teamsUserId": &types.AttributeValueMemberS{Value: teamsUserID},
+		},
+		UpdateExpression: aws.String("REMOVE totpSecret SET totpEnabled = :f"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":f": &types.AttributeValueMemberBOOL{Value: false},
+		},
+	})
+	return err
+}
+
 // EnableTOTP marks TOTP as active after first successful verification.
 func (s *DynamoDBService) EnableTOTP(ctx context.Context, teamsUserID string) error {
 	_, err := s.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
@@ -219,6 +235,75 @@ func (s *DynamoDBService) ListUsers(ctx context.Context, roleFilter string) ([]m
 	}
 	var users []model.User
 	return users, attributevalue.UnmarshalListOfMaps(out.Items, &users)
+}
+
+// ── MFA Challenges ────────────────────────────────────────────────────────────
+
+func (s *DynamoDBService) CreateMFAChallenge(ctx context.Context, c model.MFAChallenge) error {
+	item, err := attributevalue.MarshalMap(c)
+	if err != nil {
+		return err
+	}
+	_, err = s.client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(tableMFAChallenges),
+		Item:      item,
+	})
+	return err
+}
+
+func (s *DynamoDBService) GetMFAChallenge(ctx context.Context, challengeID string) (*model.MFAChallenge, error) {
+	out, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: aws.String(tableMFAChallenges),
+		Key: map[string]types.AttributeValue{
+			"challengeId": &types.AttributeValueMemberS{Value: challengeID},
+		},
+	})
+	if err != nil || out.Item == nil {
+		return nil, err
+	}
+	var c model.MFAChallenge
+	err = attributevalue.UnmarshalMap(out.Item, &c)
+	return &c, err
+}
+
+// GetPendingChallengeForAdmin scans for the latest pending challenge owned by adminID.
+func (s *DynamoDBService) GetPendingChallengeForAdmin(ctx context.Context, adminID string) (*model.MFAChallenge, error) {
+	out, err := s.client.Scan(ctx, &dynamodb.ScanInput{
+		TableName:        aws.String(tableMFAChallenges),
+		FilterExpression: aws.String("adminId = :a AND #s = :p"),
+		ExpressionAttributeNames:  map[string]string{"#s": "status"},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":a": &types.AttributeValueMemberS{Value: adminID},
+			":p": &types.AttributeValueMemberS{Value: "pending"},
+		},
+	})
+	if err != nil || len(out.Items) == 0 {
+		return nil, err
+	}
+	var c model.MFAChallenge
+	err = attributevalue.UnmarshalMap(out.Items[0], &c)
+	return &c, err
+}
+
+func (s *DynamoDBService) ResolveMFAChallenge(ctx context.Context, challengeID, status, errMsg string) error {
+	expr := "SET #s = :status"
+	vals := map[string]types.AttributeValue{
+		":status":  &types.AttributeValueMemberS{Value: status},
+		":pending": &types.AttributeValueMemberS{Value: "pending"},
+	}
+	if errMsg != "" {
+		expr += ", errorMessage = :e"
+		vals[":e"] = &types.AttributeValueMemberS{Value: errMsg}
+	}
+	_, err := s.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:                 aws.String(tableMFAChallenges),
+		Key:                       map[string]types.AttributeValue{"challengeId": &types.AttributeValueMemberS{Value: challengeID}},
+		UpdateExpression:          aws.String(expr),
+		ConditionExpression:       aws.String("#s = :pending"),
+		ExpressionAttributeNames:  map[string]string{"#s": "status"},
+		ExpressionAttributeValues: vals,
+	})
+	return err
 }
 
 // UpdateUserRole changes the role of a user. Only allows admin↔user transitions for admin callers;

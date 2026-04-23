@@ -4,7 +4,11 @@ import (
 	"context"
 	"log"
 	"os"
+	"strings"
 
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
+	ginadapter "github.com/awslabs/aws-lambda-go-api-proxy/gin"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -13,9 +17,11 @@ import (
 	"github.com/seta-international/team-aws-extension/internal/service"
 )
 
+var ginLambda *ginadapter.GinLambdaV2
+
 func main() {
 	awsCfg, err := config.LoadDefaultConfig(context.Background(),
-		config.WithRegion(getEnv("AWS_REGION", "ap-southeast-1")),
+		config.WithRegion(getEnv("APP_REGION", "us-west-2")),
 	)
 	if err != nil {
 		log.Fatalf("failed to load AWS config: %v", err)
@@ -28,29 +34,27 @@ func main() {
 	ec2Handler := handler.NewEC2Handler(ec2Svc)
 	usersHandler := handler.NewUsersHandler(dbSvc)
 	totpHandler := handler.NewTOTPHandler(dbSvc, ec2Svc)
+	mfaHandler := handler.NewMFAHandler(dbSvc, ec2Svc)
 
 	r := gin.Default()
 
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{getEnv("FRONTEND_URL", "http://localhost:5173")},
-		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
-		AllowHeaders:     []string{"Authorization", "Content-Type"},
-		AllowCredentials: true,
+		AllowAllOrigins: true,
+		AllowMethods:    []string{"GET", "POST", "OPTIONS", "PUT", "DELETE"},
+		AllowHeaders:    []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		ExposeHeaders:   []string{"Content-Length"},
 	}))
 
 	auth := middleware.TeamsAuth(dbSvc)
 	adminOnly := middleware.RequireAdmin()
 	rootOnly := middleware.RequireRoot()
 
-	api := r.Group("/api", auth)
-	{
-		// Employee endpoints
-		api.POST("/requests", reqHandler.CreateRequest)
-		api.GET("/requests/me", reqHandler.ListMyRequests)
-		api.GET("/ec2/instances", ec2Handler.ListInstances)
+	setupRoutes := func(group *gin.RouterGroup) {
+		group.POST("/requests", reqHandler.CreateRequest)
+		group.GET("/requests/me", reqHandler.ListMyRequests)
+		group.GET("/ec2/instances", ec2Handler.ListInstances)
 
-		// Admin + Root endpoints
-		admin := api.Group("/admin", adminOnly)
+		admin := group.Group("/admin", adminOnly)
 		{
 			admin.GET("/requests", reqHandler.ListAllRequests)
 			admin.POST("/requests/approve", totpHandler.ApproveWithOTP)
@@ -59,20 +63,48 @@ func main() {
 			admin.GET("/users", usersHandler.ListUsers)
 			admin.GET("/totp/setup", totpHandler.Setup)
 			admin.POST("/totp/verify-setup", totpHandler.VerifySetup)
+			admin.POST("/totp/reset", totpHandler.Reset)
+			admin.POST("/mfa/challenge", mfaHandler.CreateChallenge)
+			admin.GET("/mfa/pending", mfaHandler.GetPending)
+			admin.GET("/mfa/challenge/:id/status", mfaHandler.GetStatus)
+			admin.POST("/mfa/challenge/:id/verify", mfaHandler.Verify)
 		}
 
-		// Root-only endpoints
-		root := api.Group("/root", rootOnly)
+		root := group.Group("/root", rootOnly)
 		{
 			root.POST("/users/role", usersHandler.UpdateUserRole)
 		}
 	}
 
-	port := getEnv("PORT", "8080")
-	log.Printf("server listening on :%s", port)
-	if err := r.Run(":" + port); err != nil {
-		log.Fatal(err)
+	api := r.Group("/api", auth)
+	setupRoutes(api)
+
+	root := r.Group("/", auth)
+	setupRoutes(root)
+
+	if os.Getenv("LAMBDA_TASK_ROOT") != "" {
+		ginLambda = ginadapter.NewV2(r)
+		lambda.Start(Handler)
+	} else {
+		port := getEnv("PORT", "8081")
+		log.Printf("server listening on :%s", port)
+		if err := r.Run(":" + port); err != nil {
+			log.Fatal(err)
+		}
 	}
+}
+
+func Handler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	p := req.RawPath
+	p = strings.TrimPrefix(p, "/default")
+	p = strings.TrimPrefix(p, "/teams-aws-backend")
+	if p == "" {
+		p = "/"
+	}
+	req.RawPath = p
+	req.RequestContext.HTTP.Path = p
+
+	return ginLambda.ProxyWithContext(ctx, req)
 }
 
 func getEnv(key, fallback string) string {

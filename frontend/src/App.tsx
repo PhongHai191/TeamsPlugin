@@ -15,8 +15,14 @@ import {
 
 export type View = 'ec2' | 'requests' | 'users'
 
+const ROLE_COLORS: Record<string, string> = {
+  root: '#f5a623',
+  admin: '#7b68ee',
+  user: '#50c878',
+}
+
 export default function App() {
-  const { user, loading, error } = useTeamsAuth()
+  const { user, loading, error, isDevMode, setDevRole } = useTeamsAuth()
   const [currentView, setCurrentView] = useState<View>('ec2')
   const [pendingCount, setPendingCount] = useState(0)
 
@@ -59,6 +65,34 @@ export default function App() {
           <div className="logo-box"><ShieldCheckmark24Filled style={{ fontSize: 18 }} /></div>
           <span className="app-name">DevOps Center</span>
         </div>
+
+        {isDevMode && (
+          <div style={{ padding: '8px 12px 4px' }}>
+            <div style={{ fontSize: 10, color: '#666', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Demo Role</div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {(['user', 'admin', 'root'] as const).map(r => (
+                <button
+                  key={r}
+                  onClick={() => setDevRole(r)}
+                  style={{
+                    flex: 1,
+                    padding: '3px 0',
+                    fontSize: 11,
+                    fontWeight: user?.role === r ? 700 : 400,
+                    border: `1px solid ${ROLE_COLORS[r]}`,
+                    borderRadius: 4,
+                    background: user?.role === r ? ROLE_COLORS[r] : 'transparent',
+                    color: user?.role === r ? '#fff' : ROLE_COLORS[r],
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <nav className="sidebar-nav">
           <a 
@@ -116,9 +150,16 @@ export default function App() {
 
       {/* MAIN CONTENT */}
       <main className="main-content">
-        {currentView === 'ec2' && (isPrivileged ? <AdminDashboard user={user} view="ec2" /> : <EmployeeDashboard user={user} view="ec2" />)}
-        {currentView === 'requests' && (isPrivileged ? <AdminDashboard user={user} view="requests" /> : <EmployeeDashboard user={user} view="requests" />)}
-        {currentView === 'users' && isPrivileged && <UserManagement callerRole={user.role} />}
+        {isPrivileged
+          ? <>
+              {(currentView === 'ec2' || currentView === 'requests') && <AdminDashboard user={user} view={currentView} />}
+              {currentView === 'users' && <UserManagement callerRole={user.role} />}
+            </>
+          : <>
+              {currentView === 'ec2' && <EmployeeDashboard user={user} view="ec2" />}
+              {currentView === 'requests' && <EmployeeDashboard user={user} view="requests" />}
+            </>
+        }
       </main>
     </div>
   )

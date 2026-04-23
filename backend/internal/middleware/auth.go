@@ -41,16 +41,16 @@ func TeamsAuth(db *service.DynamoDBService) gin.HandlerFunc {
 		}
 		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 
-		// Dev bypass: accept mock token when GIN_MODE != release
-		if gin.Mode() != gin.ReleaseMode && tokenStr == "dev-mock-token" {
-			devRole := os.Getenv("DEV_ROLE")
-			if devRole == "" {
-				devRole = string(model.RoleUser)
+		// Dev bypass: accept dev-mock-token-{role} when DEV_ROLE env is set
+		if os.Getenv("DEV_ROLE") != "" && strings.HasPrefix(tokenStr, "dev-mock-token") {
+			role := strings.TrimPrefix(tokenStr, "dev-mock-token-")
+			if role == "dev-mock-token" || role == "" {
+				role = os.Getenv("DEV_ROLE")
 			}
-			c.Set(ContextKeyUserID, "dev-user-001")
-			c.Set(ContextKeyUserName, "Dev User")
-			c.Set(ContextKeyEmail, "dev@example.com")
-			c.Set(ContextKeyRole, devRole)
+			c.Set(ContextKeyUserID, "dev-user-"+role)
+			c.Set(ContextKeyUserName, "Demo ("+role+")")
+			c.Set(ContextKeyEmail, role+"@example.com")
+			c.Set(ContextKeyRole, role)
 			c.Next()
 			return
 		}

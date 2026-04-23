@@ -43,7 +43,31 @@ type TOTPVerifySetupBody struct {
 
 type ApproveWithOTPBody struct {
 	RequestID string `json:"requestId" binding:"required"`
-	TOTPCode  string `json:"totpCode"  binding:"required"`
+	TOTPCode  string `json:"totpCode"`
+}
+
+// MFA Number Matching
+
+type MFAChallenge struct {
+	ChallengeID   string `dynamodbav:"challengeId"`
+	RequestID     string `dynamodbav:"requestId"`
+	AdminID       string `dynamodbav:"adminId"`
+	InstanceID    string `dynamodbav:"instanceId"`
+	InstanceName  string `dynamodbav:"instanceName"`
+	RequestedBy   string `dynamodbav:"requestedBy"`
+	DisplayNumber int    `dynamodbav:"displayNumber"`
+	Options       []int  `dynamodbav:"options"`
+	Status        string `dynamodbav:"status"` // pending | approved | failed
+	ErrorMessage  string `dynamodbav:"errorMessage,omitempty"`
+	ExpiresAt     int64  `dynamodbav:"expiresAt"`
+}
+
+type CreateMFAChallengeBody struct {
+	RequestID string `json:"requestId" binding:"required"`
+}
+
+type VerifyMFAChallengeBody struct {
+	SelectedNumber int `json:"selectedNumber" binding:"required"`
 }
 
 type RestartRequest struct {

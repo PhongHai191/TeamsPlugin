@@ -8,23 +8,37 @@ interface AuthState {
   token: string | null
   loading: boolean
   error: string | null
+  isDevMode: boolean
+  setDevRole: (role: Role) => void
 }
 
-export function useTeamsAuth() {
-  const [state, setState] = useState<AuthState>({
+export function useTeamsAuth(): AuthState {
+  const [state, setState] = useState<Omit<AuthState, 'setDevRole'>>({
     user: null,
     token: null,
     loading: true,
     error: null,
+    isDevMode: false,
   })
+
+  const setDevRole = (role: Role) => {
+    const url = new URL(window.location.href)
+    url.searchParams.set('role', role)
+    window.history.replaceState({}, '', url.toString())
+    const newToken = `dev-mock-token-${role}`
+    setAuthToken(newToken)
+    setState(prev => prev.user
+      ? { ...prev, token: newToken, user: { ...prev.user, role, teamsUserId: `dev-user-${role}`, email: `${role}@example.com`, displayName: `Demo (${role})` } }
+      : prev
+    )
+  }
 
   useEffect(() => {
     const initTeams = async () => {
       try {
-        // Timeout after 2 seconds if not in Teams
         const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject('Teams init timeout'), 2000))
         await Promise.race([microsoftTeams.app.initialize(), timeoutPromise])
-        
+
         const context = await microsoftTeams.app.getContext()
         const token = await new Promise<string>((resolve, reject) => {
           microsoftTeams.authentication.getAuthToken({
@@ -44,33 +58,32 @@ export function useTeamsAuth() {
           token,
           loading: false,
           error: null,
+          isDevMode: false,
         })
       } catch (err) {
-        if (import.meta.env.DEV) {
-          console.warn('Teams init failed, falling back to mock user:', err)
-          const mockToken = 'dev-mock-token'
-          setAuthToken(mockToken)
-          const urlRole = new URLSearchParams(window.location.search).get('role') as Role | null
-          const role: Role = urlRole ?? (import.meta.env.VITE_DEV_ROLE as Role) ?? 'user'
-          setState({
-            user: {
-              teamsUserId: 'dev-user-001',
-              displayName: 'Dev User',
-              email: 'dev@example.com',
-              role,
-              totpEnabled: false,
-            },
-            token: mockToken,
-            loading: false,
-            error: null,
-          })
-        } else {
-          setState({ user: null, token: null, loading: false, error: String(err) })
-        }
+        console.warn('Teams init failed, falling back to mock user:', err)
+        const params = new URLSearchParams(window.location.search)
+        const role: Role = (params.get('role') as Role) ?? (import.meta.env.VITE_DEV_ROLE as Role) ?? 'user'
+        const mockToken = `dev-mock-token-${role}`
+        setAuthToken(mockToken)
+
+        setState({
+          user: {
+            teamsUserId: `dev-user-${role}`,
+            displayName: `Demo (${role})`,
+            email: `${role}@example.com`,
+            role,
+            totpEnabled: false,
+          },
+          token: mockToken,
+          loading: false,
+          error: null,
+          isDevMode: true,
+        })
       }
     }
     initTeams()
   }, [])
 
-  return state
+  return { ...state, setDevRole }
 }
