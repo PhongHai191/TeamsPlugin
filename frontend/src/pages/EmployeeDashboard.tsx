@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react'
 import { listInstances, listMyRequests, createRequest } from '../lib/api'
-import type { CurrentUser, EC2Instance, RestartRequest } from '../types'
+import type { CurrentUser, EC2Instance, OperationType, RestartRequest } from '../types'
 import {
   Server24Regular,
   Clipboard24Regular,
   WeatherPartlyCloudyDay24Regular,
   MailInbox24Regular,
   ArrowClockwise20Regular,
-  Navigation24Regular
+  Navigation24Regular,
+  Power24Regular,
+  Play24Regular
 } from '@fluentui/react-icons'
 
 interface Props {
@@ -50,15 +52,25 @@ export function EmployeeDashboard({ user, view, onToggleSidebar }: Props) {
     if (view === 'requests') fetchRequests()
   }, [view])
 
-  const handleRequestReboot = async (inst: EC2Instance) => {
-    const reason = window.prompt(`Submit restart request for ${inst.name}?\nReason:`)
+  const handleRequestOperation = async (inst: EC2Instance, operation: OperationType) => {
+    const label = operation.charAt(0).toUpperCase() + operation.slice(1)
+    const reason = window.prompt(`Submit ${label} request for ${inst.name}?\nReason:`)
     if (!reason) return
     try {
-      await createRequest({ instanceId: inst.instanceId, instanceName: inst.name, reason, region: inst.region })
-      alert('Request submitted successfully')
+      await createRequest({
+        instanceId: inst.instanceId,
+        instanceName: inst.name,
+        reason,
+        region: inst.region,
+        operation,
+        project: inst.project,
+        accountId: inst.accountId,
+      })
+      alert(`${label} request submitted successfully`)
       fetchRequests()
     } catch (e: any) {
-      alert('Failed to submit request: ' + e?.response?.data?.error || e.message)
+      const msg = e?.response?.data?.error || e.message
+      alert(`Failed to submit request: ${msg}`)
     }
   }
 
@@ -126,8 +138,17 @@ export function EmployeeDashboard({ user, view, onToggleSidebar }: Props) {
                     </td>
                     <td className="action-cell">
                       {inst.state === 'running' ? (
-                        <button className="btn-action" onClick={() => handleRequestReboot(inst)}>
-                          <Clipboard24Regular fontSize={14} style={{ marginRight: 6 }}/> Request Reboot
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button className="btn-action" onClick={() => handleRequestOperation(inst, 'reboot')}>
+                            <ArrowClockwise20Regular fontSize={14} style={{ marginRight: 4 }}/> Reboot
+                          </button>
+                          <button className="btn-action btn-action-danger" onClick={() => handleRequestOperation(inst, 'stop')}>
+                            <Power24Regular fontSize={14} style={{ marginRight: 4 }}/> Stop
+                          </button>
+                        </div>
+                      ) : inst.state === 'stopped' ? (
+                        <button className="btn-action btn-action-success" onClick={() => handleRequestOperation(inst, 'start')}>
+                          <Play24Regular fontSize={14} style={{ marginRight: 4 }}/> Start
                         </button>
                       ) : <span className="no-action">—</span>}
                     </td>
@@ -143,22 +164,21 @@ export function EmployeeDashboard({ user, view, onToggleSidebar }: Props) {
       </div>
     )
   }
+// requests view
+const filteredReqs = reqFilter === 'all' ? requests : requests.filter(r => r.status === reqFilter)
 
-  // requests view
-  const filteredReqs = reqFilter === 'all' ? requests : requests.filter(r => r.status === reqFilter)
-  
-  return (
-    <div className="view-section active">
-      <header className="top-nav">
-        <div className="top-nav-left">
-          <button className="mobile-menu-btn" onClick={onToggleSidebar}>
-            <Navigation24Regular />
-          </button>
-          <button className="btn-top-nav"><span className="icon" style={{ display: 'flex' }}><Clipboard24Regular fontSize={18} /></span> My Requests</button>
-        </div>
-      </header>
+return (
+  <div className="view-section active">
+    <header className="top-nav">
+      <div className="top-nav-left">
+        <button className="mobile-menu-btn" onClick={onToggleSidebar}>
+          <Navigation24Regular />
+        </button>
+        <button className="btn-top-nav"><span className="icon" style={{ display: 'flex' }}><Clipboard24Regular fontSize={18} /></span> My Requests</button>
+      </div>
+    </header>
 
-      <div className="content-scroll">
+    <div className="content-scroll">
         <div className="hero-banner req-banner">
           <div className="hero-left">
             <div className="date-block highlight-badge">
@@ -189,6 +209,7 @@ export function EmployeeDashboard({ user, view, onToggleSidebar }: Props) {
             <thead>
               <tr>
                 <th>Target</th>
+                <th>Operation</th>
                 <th>Reason</th>
                 <th>Time</th>
                 <th>Status</th>
@@ -199,6 +220,7 @@ export function EmployeeDashboard({ user, view, onToggleSidebar }: Props) {
               {filteredReqs.map(req => (
                 <tr key={req.requestId} className={`instance-row ${req.status === 'pending' ? 'row-pending' : ''}`}>
                   <td className="name-cell"><span className="server-icon" style={{ verticalAlign: 'middle', display: 'inline-block' }}><Server24Regular fontSize={16} /></span>{req.instanceName}</td>
+                  <td><span className={`op-badge op-${req.operation || 'reboot'}`}>{req.operation || 'reboot'}</span></td>
                   <td style={{ maxWidth: 200 }}>{req.reason}</td>
                   <td className="id-cell">{new Date(req.createdAt).toLocaleString()}</td>
                   <td>
@@ -213,7 +235,7 @@ export function EmployeeDashboard({ user, view, onToggleSidebar }: Props) {
                 </tr>
               ))}
               {filteredReqs.length === 0 && (
-                <tr><td colSpan={5} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No requests found</td></tr>
+                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No requests found</td></tr>
               )}
             </tbody>
           </table>

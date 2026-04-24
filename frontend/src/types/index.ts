@@ -1,5 +1,6 @@
 export type Role = 'root' | 'admin' | 'user'
 export type RequestStatus = 'pending' | 'approved' | 'denied'
+export type OperationType = 'reboot' | 'stop' | 'start'
 
 export interface EC2Instance {
   instanceId: string
@@ -10,6 +11,8 @@ export interface EC2Instance {
   privateIp?: string
   region: string
   project?: string
+  accountId?: string
+  accountAlias?: string
 }
 
 export interface RestartRequest {
@@ -19,6 +22,7 @@ export interface RestartRequest {
   instanceId: string
   instanceName: string
   region?: string
+  operation?: OperationType
   reason: string
   status: RequestStatus
   denyReason?: string
@@ -26,6 +30,37 @@ export interface RestartRequest {
   approvedByName?: string
   createdAt: string
   updatedAt: string
+}
+
+export interface AWSAccount {
+  accountId: string
+  alias: string
+  roleArn: string
+  regions: string[]
+  project: string
+  addedAt: string
+  addedBy: string
+  // externalId intentionally omitted — never returned from API
+}
+
+export interface AccountMember {
+  userId: string
+  accountId: string
+  grantedBy: string
+  grantedAt: string
+}
+
+export interface BlackoutWindow {
+  windowId: string
+  name: string
+  startTime: string
+  endTime: string
+  timezone: string
+  daysOfWeek: string[]
+  scope: string
+  reason: string
+  active: boolean
+  createdBy: string
 }
 
 export interface User {

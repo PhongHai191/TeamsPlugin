@@ -3,19 +3,20 @@ import { useTeamsAuth } from './hooks/useTeamsAuth'
 import { AdminDashboard } from './pages/AdminDashboard'
 import { EmployeeDashboard } from './pages/EmployeeDashboard'
 import { UserManagement } from './pages/UserManagement'
+import { BlackoutWindows } from './pages/BlackoutWindows'
+import { AccountManagement } from './pages/AccountManagement'
 import { listAllRequests } from './lib/api'
 import {
   Server24Regular,
   Clipboard24Regular,
   People24Regular,
+  Clock24Regular,
   Cloud24Regular,
-  Branch24Regular,
   ShieldCheckmark24Filled,
-  Navigation24Regular,
   Dismiss24Regular
 } from '@fluentui/react-icons'
 
-export type View = 'ec2' | 'requests' | 'users'
+export type View = 'ec2' | 'requests' | 'users' | 'blackout' | 'accounts'
 
 const ROLE_COLORS: Record<string, string> = {
   root: '#f5a623',
@@ -136,9 +137,9 @@ export default function App() {
           {isPrivileged && (
             <>
               <div className="nav-divider"></div>
-              <a 
-                className={`nav-item ${currentView === 'users' ? 'active' : ''}`} 
-                href="#" 
+              <a
+                className={`nav-item ${currentView === 'users' ? 'active' : ''}`}
+                href="#"
                 onClick={(e) => { e.preventDefault(); setCurrentView('users'); closeSidebar() }}
               >
                 <div className="nav-indicator"></div>
@@ -148,18 +149,29 @@ export default function App() {
             </>
           )}
 
-          <div className="nav-divider"></div>
-          
-          <a className="nav-item disabled" href="#">
-            <div className="nav-indicator"></div>
-            <span className="nav-icon"><Cloud24Regular /></span>
-            <span className="nav-text">Cloud Accounts</span>
-          </a>
-          <a className="nav-item disabled" href="#">
-            <div className="nav-indicator"></div>
-            <span className="nav-icon"><Branch24Regular /></span>
-            <span className="nav-text">Git Repos</span>
-          </a>
+          {user?.role === 'root' && (
+            <>
+              <div className="nav-divider"></div>
+              <a
+                className={`nav-item ${currentView === 'accounts' ? 'active' : ''}`}
+                href="#"
+                onClick={(e) => { e.preventDefault(); setCurrentView('accounts'); closeSidebar() }}
+              >
+                <div className="nav-indicator"></div>
+                <span className="nav-icon"><Cloud24Regular /></span>
+                <span className="nav-text">AWS Accounts</span>
+              </a>
+              <a
+                className={`nav-item ${currentView === 'blackout' ? 'active' : ''}`}
+                href="#"
+                onClick={(e) => { e.preventDefault(); setCurrentView('blackout'); closeSidebar() }}
+              >
+                <div className="nav-indicator"></div>
+                <span className="nav-icon"><Clock24Regular /></span>
+                <span className="nav-text">Blackout Windows</span>
+              </a>
+            </>
+          )}
         </nav>
       </aside>
 
@@ -169,6 +181,8 @@ export default function App() {
           ? <>
               {(currentView === 'ec2' || currentView === 'requests') && <AdminDashboard user={user} view={currentView} onToggleSidebar={toggleSidebar} />}
               {currentView === 'users' && <UserManagement callerRole={user.role} onToggleSidebar={toggleSidebar} />}
+              {currentView === 'accounts' && user.role === 'root' && <AccountManagement onToggleSidebar={toggleSidebar} />}
+              {currentView === 'blackout' && user.role === 'root' && <BlackoutWindows onToggleSidebar={toggleSidebar} />}
             </>
           : <>
               {currentView === 'ec2' && <EmployeeDashboard user={user} view="ec2" onToggleSidebar={toggleSidebar} />}

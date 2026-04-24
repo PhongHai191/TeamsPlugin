@@ -5,6 +5,8 @@ import (
 	"sort"
 
 	"github.com/gin-gonic/gin"
+	"github.com/seta-international/team-aws-extension/internal/middleware"
+	"github.com/seta-international/team-aws-extension/internal/model"
 	"github.com/seta-international/team-aws-extension/internal/service"
 )
 
@@ -18,17 +20,53 @@ func NewEC2Handler(ec2Svc *service.EC2Service, db *service.DynamoDBService) *EC2
 }
 
 // GET /api/ec2/instances
+// If user has account memberships → assume role per account and aggregate.
+// Root/admin with no memberships fall back to hub-account listing.
 func (h *EC2Handler) ListInstances(c *gin.Context) {
-	instances, err := h.ec2Svc.ListInstances(c.Request.Context())
+	userID, _ := c.Get(middleware.ContextKeyUserID)
+	userEmail, _ := c.Get(middleware.ContextKeyEmail)
+
+	accounts, err := h.db.ListUserAccounts(c.Request.Context(), userID.(string))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, instances)
+
+	if len(accounts) == 0 {
+		// No account assignments — use hub account directly
+		instances, err := h.ec2Svc.ListInstances(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if instances == nil {
+			instances = []model.EC2Instance{}
+		}
+		c.JSON(http.StatusOK, instances)
+		return
+	}
+
+	email := ""
+	if e, ok := userEmail.(string); ok {
+		email = e
+	}
+
+	var all []model.EC2Instance
+	for _, acc := range accounts {
+		insts, err := h.ec2Svc.ListInstancesForAccount(c.Request.Context(), acc, email)
+		if err != nil {
+			// Log but keep going — one failing account shouldn't block others
+			continue
+		}
+		all = append(all, insts...)
+	}
+	if all == nil {
+		all = []model.EC2Instance{}
+	}
+	c.JSON(http.StatusOK, all)
 }
 
 // GET /api/admin/ec2/:instanceId/reboot-history
-// Returns all approved reboot requests for the instance from DynamoDB, most recent first.
 func (h *EC2Handler) GetRebootHistory(c *gin.Context) {
 	instanceID := c.Param("instanceId")
 	records, err := h.db.ListApprovedByInstance(c.Request.Context(), instanceID)

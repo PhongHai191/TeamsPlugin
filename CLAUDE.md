@@ -24,7 +24,7 @@ TeamAWSExtension/
 ### Backend
 ```bash
 cd backend
-export AWS_REGION=ap-southeast-1
+export AWS_REGION=us-west-2
 export FRONTEND_URL=http://localhost:5173
 export PORT=8081
 export DEV_ROLE=admin   # root | admin | user
@@ -58,11 +58,17 @@ In dev mode (`GIN_MODE != release`), if the token is `dev-mock-token`, TOTP veri
 | GET | `/api/admin/requests` | admin, root | List all requests (`?status=pending\|approved\|denied`) |
 | POST | `/api/admin/requests/approve` | admin, root | Approve + reboot (requires `totpCode`) |
 | POST | `/api/admin/requests/deny` | admin, root | Deny with reason |
-| GET | `/api/admin/ec2/:instanceId/reboot-history` | admin, root | CloudTrail reboot history |
+| GET | `/api/admin/ec2/:instanceId/reboot-history` | admin, root | Operation history for instance (DynamoDB) |
 | GET | `/api/admin/users` | admin, root | List users (admin sees `user` role only; root sees all) |
 | POST | `/api/root/users/role` | root | Change user role (admin ↔ user) |
 | GET | `/api/admin/totp/setup` | admin, root | Generate TOTP secret + otpauth URL |
 | POST | `/api/admin/totp/verify-setup` | admin, root | Verify first code and enable TOTP |
+| POST | `/api/admin/totp/reset` | admin, root | Clear TOTP secret to re-link authenticator |
+| GET | `/api/admin/blackout` | admin, root | List all blackout windows |
+| POST | `/api/root/blackout` | root | Create blackout window |
+| PUT | `/api/root/blackout/:id` | root | Update blackout window |
+| DELETE | `/api/root/blackout/:id` | root | Delete blackout window |
+| PATCH | `/api/root/blackout/:id/toggle?active=true\|false` | root | Enable/disable window |
 
 ## Roles
 
@@ -123,22 +129,45 @@ aws ec2 create-tags --resources i-xxxx --tags Key=Restartable,Value=true
   "Action": [
     "ec2:DescribeInstances",
     "ec2:RebootInstances",
+    "ec2:StopInstances",
+    "ec2:StartInstances",
     "dynamodb:GetItem",
     "dynamodb:PutItem",
     "dynamodb:UpdateItem",
     "dynamodb:Query",
     "dynamodb:Scan",
+    "dynamodb:DeleteItem",
     "cloudtrail:LookupEvents"
   ],
   "Resource": "*"
 }
 ```
 
+## DynamoDB Tables
+
+| Table | PK | Purpose |
+|---|---|---|
+| `users` | `teamsUserId` | User profiles, roles, TOTP secrets |
+| `restart-requests` | `requestId` | Operation requests + audit trail |
+| `mfa-challenges` | `challengeId` | Number-matching MFA challenges |
+| `blackout-windows` | `windowId` | Time-based operation blocks |
+
+Create `blackout-windows`:
+```bash
+aws dynamodb create-table \
+  --table-name blackout-windows \
+  --attribute-definitions AttributeName=windowId,AttributeType=S \
+  --key-schema AttributeName=windowId,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST \
+  --region ap-southeast-1
+```
+
 ## Key Design Decisions
 
 - Role stored in DynamoDB, not in Teams token — backend is authoritative
-- `ec2:RebootInstances` called only after TOTP verified and status confirmed `pending`
+- EC2 operations (reboot/stop/start) executed only after TOTP verified and request confirmed `pending`
+- Blackout windows checked at both submit time and approve time
 - TOTP secret stored in DynamoDB per-user; `totpEnabled` flag separates setup-in-progress from active
-- EC2 reboot history fetched from CloudTrail `LookupEvents` filtered by `RebootInstances`
+- EC2 operation history stored in DynamoDB `restart-requests` (not CloudTrail)
 - Port 8081 used locally due to Apache conflict on 8080
 - `VITE_API_URL=/api` (relative path) routes through Vite proxy — avoids CORS entirely in dev

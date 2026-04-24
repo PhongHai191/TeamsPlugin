@@ -23,6 +23,37 @@ const (
 	StatusDenied   Status = "denied"
 )
 
+type OperationType string
+
+const (
+	OperationReboot OperationType = "reboot"
+	OperationStop   OperationType = "stop"
+	OperationStart  OperationType = "start"
+)
+
+type BlackoutWindow struct {
+	WindowID   string   `dynamodbav:"windowId"   json:"windowId"`
+	Name       string   `dynamodbav:"name"       json:"name"`
+	StartTime  string   `dynamodbav:"startTime"  json:"startTime"`
+	EndTime    string   `dynamodbav:"endTime"    json:"endTime"`
+	Timezone   string   `dynamodbav:"timezone"   json:"timezone"`
+	DaysOfWeek []string `dynamodbav:"daysOfWeek" json:"daysOfWeek"`
+	Scope      string   `dynamodbav:"scope"      json:"scope"`
+	Reason     string   `dynamodbav:"reason"     json:"reason"`
+	Active     bool     `dynamodbav:"active"     json:"active"`
+	CreatedBy  string   `dynamodbav:"createdBy"  json:"createdBy"`
+}
+
+type BlackoutWindowBody struct {
+	Name       string   `json:"name"       binding:"required"`
+	StartTime  string   `json:"startTime"  binding:"required"`
+	EndTime    string   `json:"endTime"    binding:"required"`
+	Timezone   string   `json:"timezone"   binding:"required"`
+	DaysOfWeek []string `json:"daysOfWeek" binding:"required"`
+	Scope      string   `json:"scope"`
+	Reason     string   `json:"reason"`
+}
+
 type User struct {
 	TeamsUserID string `dynamodbav:"teamsUserId" json:"teamsUserId"`
 	DisplayName string `dynamodbav:"displayName" json:"displayName"`
@@ -72,19 +103,21 @@ type VerifyMFAChallengeBody struct {
 }
 
 type RestartRequest struct {
-	RequestID      string    `dynamodbav:"requestId"                json:"requestId"`
-	UserID         string    `dynamodbav:"userId"                   json:"userId"`
-	UserName       string    `dynamodbav:"userName"                 json:"userName"`
-	InstanceID     string    `dynamodbav:"instanceId"               json:"instanceId"`
-	InstanceName   string    `dynamodbav:"instanceName"             json:"instanceName"`
-	Region         string    `dynamodbav:"region,omitempty"         json:"region,omitempty"`
-	Reason         string    `dynamodbav:"reason"                   json:"reason"`
-	Status         Status    `dynamodbav:"status"                   json:"status"`
-	DenyReason     string    `dynamodbav:"denyReason,omitempty"     json:"denyReason,omitempty"`
-	ApprovedBy     string    `dynamodbav:"approvedBy,omitempty"     json:"approvedBy,omitempty"`
-	ApprovedByName string    `dynamodbav:"approvedByName,omitempty" json:"approvedByName,omitempty"`
-	CreatedAt      time.Time `dynamodbav:"createdAt"                json:"createdAt"`
-	UpdatedAt      time.Time `dynamodbav:"updatedAt"                json:"updatedAt"`
+	RequestID      string        `dynamodbav:"requestId"                json:"requestId"`
+	UserID         string        `dynamodbav:"userId"                   json:"userId"`
+	UserName       string        `dynamodbav:"userName"                 json:"userName"`
+	InstanceID     string        `dynamodbav:"instanceId"               json:"instanceId"`
+	InstanceName   string        `dynamodbav:"instanceName"             json:"instanceName"`
+	Region         string        `dynamodbav:"region,omitempty"         json:"region,omitempty"`
+	AccountID      string        `dynamodbav:"accountId,omitempty"      json:"accountId,omitempty"`
+	Operation      OperationType `dynamodbav:"operation"                json:"operation"`
+	Reason         string        `dynamodbav:"reason"                   json:"reason"`
+	Status         Status        `dynamodbav:"status"                   json:"status"`
+	DenyReason     string        `dynamodbav:"denyReason,omitempty"     json:"denyReason,omitempty"`
+	ApprovedBy     string        `dynamodbav:"approvedBy,omitempty"     json:"approvedBy,omitempty"`
+	ApprovedByName string        `dynamodbav:"approvedByName,omitempty" json:"approvedByName,omitempty"`
+	CreatedAt      time.Time     `dynamodbav:"createdAt"                json:"createdAt"`
+	UpdatedAt      time.Time     `dynamodbav:"updatedAt"                json:"updatedAt"`
 }
 
 type EC2Instance struct {
@@ -96,14 +129,50 @@ type EC2Instance struct {
 	PrivateIP    string `json:"privateIp,omitempty"`
 	Region       string `json:"region"`
 	Project      string `json:"project,omitempty"`
+	AccountID    string `json:"accountId,omitempty"`
+	AccountAlias string `json:"accountAlias,omitempty"`
+}
+
+type AWSAccount struct {
+	AccountID  string   `dynamodbav:"accountId"  json:"accountId"`
+	Alias      string   `dynamodbav:"alias"      json:"alias"`
+	RoleARN    string   `dynamodbav:"roleArn"    json:"roleArn"`
+	ExternalID string   `dynamodbav:"externalId" json:"-"`
+	Regions    []string `dynamodbav:"regions"    json:"regions"`
+	Project    string   `dynamodbav:"project"    json:"project"`
+	AddedAt    string   `dynamodbav:"addedAt"    json:"addedAt"`
+	AddedBy    string   `dynamodbav:"addedBy"    json:"addedBy"`
+}
+
+type AWSAccountBody struct {
+	AccountID  string   `json:"accountId"  binding:"required"`
+	Alias      string   `json:"alias"      binding:"required"`
+	RoleARN    string   `json:"roleArn"    binding:"required"`
+	ExternalID string   `json:"externalId" binding:"required"`
+	Regions    []string `json:"regions"    binding:"required"`
+	Project    string   `json:"project"`
+}
+
+type AccountMember struct {
+	UserID    string `dynamodbav:"userId"    json:"userId"`
+	AccountID string `dynamodbav:"accountId" json:"accountId"`
+	GrantedBy string `dynamodbav:"grantedBy" json:"grantedBy"`
+	GrantedAt string `dynamodbav:"grantedAt" json:"grantedAt"`
+}
+
+type AccountMemberBody struct {
+	UserID string `json:"userId" binding:"required"`
 }
 
 // Request/response DTOs
 type CreateRequestBody struct {
-	InstanceID   string `json:"instanceId"   binding:"required"`
-	InstanceName string `json:"instanceName" binding:"required"`
-	Reason       string `json:"reason"       binding:"required"`
-	Region       string `json:"region"`
+	InstanceID   string        `json:"instanceId"   binding:"required"`
+	InstanceName string        `json:"instanceName" binding:"required"`
+	Reason       string        `json:"reason"       binding:"required"`
+	Region       string        `json:"region"`
+	AccountID    string        `json:"accountId"`
+	Operation    OperationType `json:"operation"`
+	Project      string        `json:"project"`
 }
 
 type ApproveRequestBody struct {

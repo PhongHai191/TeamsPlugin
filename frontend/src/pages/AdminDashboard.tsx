@@ -4,13 +4,14 @@ import {
   approveRequestWithOTP, denyRequest, getRebootHistory,
   getTOTPSetup, verifyTOTPSetup, resetTOTP,
 } from '../lib/api'
-import type { CurrentUser, EC2Instance, RestartRequest } from '../types'
+import type { CurrentUser, EC2Instance, OperationType, RestartRequest } from '../types'
 import { QRCodeSVG } from 'qrcode.react'
 import {
   Server24Regular, Clipboard24Regular, WeatherPartlyCloudyDay24Regular,
   Flash24Regular, Document24Regular, CheckmarkCircle24Regular,
   DismissCircle24Regular, LockClosed24Regular, ShieldKeyhole24Regular,
   MailInbox24Regular, ArrowClockwise20Regular, Navigation24Regular,
+  Power24Regular, Play24Regular,
 } from '@fluentui/react-icons'
 
 interface Props {
@@ -125,7 +126,9 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
     try {
       await approveRequestWithOTP(approveTarget.requestId, code)
       setOtpModalOpen(false)
-      setSuccessToast(`Reboot command sent to ${approveTarget.instanceName}`)
+      const op = approveTarget.operation || 'reboot'
+      const opLabel = op.charAt(0).toUpperCase() + op.slice(1)
+      setSuccessToast(`${opLabel} command sent to ${approveTarget.instanceName}`)
       setTimeout(() => setSuccessToast(null), 4000)
       fetchRequests()
     } catch {
@@ -160,11 +163,14 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
     try { setRebootLogs(await getRebootHistory(instId)) } catch { /* ignore */ }
   }
 
-  const handleRequestReboot = async (inst: EC2Instance) => {
-    const reason = window.prompt(`Submit restart request for ${inst.name}?\nReason:`)
+  const handleRequestOperation = async (inst: EC2Instance, operation: OperationType) => {
+    const label = operation.charAt(0).toUpperCase() + operation.slice(1)
+    const reason = window.prompt(`Submit ${label} request for ${inst.name}?\nReason:`)
     if (!reason) return
-    try { await createRequest({ instanceId: inst.instanceId, instanceName: inst.name, reason, region: inst.region }); alert('Request submitted') }
-    catch (e: any) { alert('Failed: ' + (e?.response?.data?.error || e.message)) }
+    try {
+      await createRequest({ instanceId: inst.instanceId, instanceName: inst.name, reason, region: inst.region, operation, project: inst.project, accountId: inst.accountId })
+      alert(`${label} request submitted`)
+    } catch (e: any) { alert('Failed: ' + (e?.response?.data?.error || e.message)) }
   }
 
   const timerColor = totpSecondsLeft <= 5 ? '#ef5350' : totpSecondsLeft <= 10 ? '#f5a623' : '#50c878'
@@ -241,7 +247,10 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
               <span className="modal-icon"><LockClosed24Regular style={{ fontSize: 28 }} /></span>
               <div>
                 <h2>Confirm Approval</h2>
-                <p className="modal-subtitle">Reboot <strong>{approveTarget?.instanceName}</strong></p>
+                <p className="modal-subtitle">
+                  <span className={`op-badge op-${approveTarget?.operation || 'reboot'}`}>{approveTarget?.operation || 'reboot'}</span>
+                  {' '}<strong>{approveTarget?.instanceName}</strong>
+                </p>
               </div>
             </div>
             <div className="modal-body" style={{ textAlign: 'center' }}>
@@ -403,10 +412,15 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
                     <td className="id-cell" style={{ fontSize: 12, color: inst.project ? 'inherit' : 'var(--text-muted)' }}>{inst.project || '—'}</td>
                     <td><div className="status-badge"><span className={`status-dot dot-${inst.state === 'running' ? 'running' : 'stopped'}`} />{inst.state}</div></td>
                     <td className="action-cell">
-                      {inst.state === 'running'
-                        ? <button className="btn-action btn-danger-outline" onClick={() => handleRequestReboot(inst)}><Flash24Regular fontSize={14} style={{ marginRight: 6 }} />Request Reboot</button>
-                        : <span className="no-action">—</span>}
-                      <button className="btn-icon-action" title="Reboot History" onClick={() => openLogs(inst.instanceId, inst.name)}><Document24Regular fontSize={16} /></button>
+                      {inst.state === 'running' ? (
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                          <button className="btn-action btn-danger-outline" onClick={() => handleRequestOperation(inst, 'reboot')}><Flash24Regular fontSize={14} style={{ marginRight: 4 }} />Reboot</button>
+                          <button className="btn-action btn-action-danger" onClick={() => handleRequestOperation(inst, 'stop')}><Power24Regular fontSize={14} style={{ marginRight: 4 }} />Stop</button>
+                        </div>
+                      ) : inst.state === 'stopped' ? (
+                        <button className="btn-action btn-action-success" onClick={() => handleRequestOperation(inst, 'start')}><Play24Regular fontSize={14} style={{ marginRight: 4 }} />Start</button>
+                      ) : <span className="no-action">—</span>}
+                      <button className="btn-icon-action" title="Operation History" onClick={() => openLogs(inst.instanceId, inst.name)}><Document24Regular fontSize={16} /></button>
                     </td>
                   </tr>
                 ))}
@@ -455,12 +469,13 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
         </div>
         <div className="table-container">
           <table className="data-table">
-            <thead><tr><th>Requester</th><th>Target</th><th>Time</th><th>Status</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Requester</th><th>Target</th><th>Operation</th><th>Time</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
               {filteredReqs.map(req => (
                 <tr key={req.requestId} className={`instance-row ${req.status === 'pending' ? 'row-pending' : ''}`}>
                   <td className="name-cell">{req.userName}</td>
                   <td><span className="server-icon" style={{ verticalAlign: 'middle', display: 'inline-block' }}><Server24Regular fontSize={16} /></span>{req.instanceName}</td>
+                  <td><span className={`op-badge op-${req.operation || 'reboot'}`}>{req.operation || 'reboot'}</span></td>
                   <td className="id-cell">{new Date(req.createdAt).toLocaleString()}</td>
                   <td><div className="status-badge"><span className={`status-dot dot-${req.status === 'approved' ? 'running' : req.status === 'denied' ? 'stopped' : 'pending'}`} />{req.status}</div></td>
                   <td className="action-cell">
@@ -479,7 +494,7 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
                   </td>
                 </tr>
               ))}
-              {filteredReqs.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No requests found</td></tr>}
+              {filteredReqs.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No requests found</td></tr>}
             </tbody>
           </table>
         </div>

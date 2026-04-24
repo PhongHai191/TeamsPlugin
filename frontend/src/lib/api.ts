@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { EC2Instance, RestartRequest, Role, User } from '../types'
+import type { AccountMember, AWSAccount, BlackoutWindow, EC2Instance, OperationType, RestartRequest, Role, User } from '../types'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api',
@@ -19,6 +19,9 @@ export const createRequest = (payload: {
   instanceName: string
   reason: string
   region: string
+  operation?: OperationType
+  project?: string
+  accountId?: string
 }): Promise<RestartRequest> =>
   api.post('/requests', payload).then(r => r.data)
 
@@ -74,3 +77,64 @@ export const resetTOTP = (): Promise<void> =>
 
 export const approveRequestWithOTP = (requestId: string, totpCode: string): Promise<void> =>
   api.post('/admin/requests/approve', { requestId, totpCode }).then(r => r.data)
+
+// Blackout Windows
+export const listBlackoutWindows = (): Promise<BlackoutWindow[]> =>
+  api.get('/admin/blackout').then(r => r.data)
+
+export const createBlackoutWindow = (payload: {
+  name: string
+  startTime: string
+  endTime: string
+  timezone: string
+  daysOfWeek: string[]
+  scope?: string
+  reason?: string
+}): Promise<BlackoutWindow> =>
+  api.post('/root/blackout', payload).then(r => r.data)
+
+export const updateBlackoutWindow = (id: string, payload: {
+  name: string
+  startTime: string
+  endTime: string
+  timezone: string
+  daysOfWeek: string[]
+  scope?: string
+  reason?: string
+}): Promise<void> =>
+  api.put(`/root/blackout/${id}`, payload).then(r => r.data)
+
+export const deleteBlackoutWindow = (id: string): Promise<void> =>
+  api.delete(`/root/blackout/${id}`).then(r => r.data)
+
+export const toggleBlackoutWindow = (id: string, active: boolean): Promise<void> =>
+  api.patch(`/root/blackout/${id}/toggle`, null, { params: { active } }).then(r => r.data)
+
+// AWS Accounts
+export const listAccounts = (): Promise<AWSAccount[]> =>
+  api.get('/root/accounts').then(r => r.data)
+
+export const createAccount = (payload: {
+  accountId: string
+  alias: string
+  roleArn: string
+  externalId: string
+  regions: string[]
+  project?: string
+}): Promise<AWSAccount> =>
+  api.post('/root/accounts', payload).then(r => r.data)
+
+export const deleteAccount = (id: string): Promise<void> =>
+  api.delete(`/root/accounts/${id}`).then(r => r.data)
+
+export const generateExternalId = (): Promise<{ externalId: string }> =>
+  api.get('/root/accounts/generate-external-id').then(r => r.data)
+
+export const listAccountMembers = (accountId: string): Promise<AccountMember[]> =>
+  api.get(`/root/accounts/${accountId}/members`).then(r => r.data)
+
+export const addAccountMember = (accountId: string, userId: string): Promise<AccountMember> =>
+  api.post(`/root/accounts/${accountId}/members`, { userId }).then(r => r.data)
+
+export const removeAccountMember = (accountId: string, userId: string): Promise<void> =>
+  api.delete(`/root/accounts/${accountId}/members/${userId}`).then(r => r.data)

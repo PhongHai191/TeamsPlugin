@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -13,9 +15,12 @@ import (
 )
 
 const (
-	tableRequests  = "restart-requests"
-	tableUsers     = "users"
+	tableRequests      = "restart-requests"
+	tableUsers         = "users"
 	tableMFAChallenges = "mfa-challenges"
+	tableBlackout      = "blackout-windows"
+	tableAccounts      = "aws-accounts"
+	tableMembers       = "account-members"
 )
 
 type DynamoDBService struct {
@@ -359,4 +364,265 @@ func (s *DynamoDBService) UpdateUserRole(ctx context.Context, teamsUserID string
 		ConditionExpression: aws.String("attribute_exists(teamsUserId)"),
 	})
 	return err
+}
+
+// ── Blackout Windows ──────────────────────────────────────────────────────────
+
+func (s *DynamoDBService) CreateBlackoutWindow(ctx context.Context, w model.BlackoutWindow) (*model.BlackoutWindow, error) {
+	w.WindowID = uuid.NewString()
+	w.Active = true
+	item, err := attributevalue.MarshalMap(w)
+	if err != nil {
+		return nil, err
+	}
+	_, err = s.client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(tableBlackout),
+		Item:      item,
+	})
+	return &w, err
+}
+
+func (s *DynamoDBService) ListBlackoutWindows(ctx context.Context) ([]model.BlackoutWindow, error) {
+	out, err := s.client.Scan(ctx, &dynamodb.ScanInput{TableName: aws.String(tableBlackout)})
+	if err != nil {
+		return nil, err
+	}
+	var windows []model.BlackoutWindow
+	return windows, attributevalue.UnmarshalListOfMaps(out.Items, &windows)
+}
+
+func (s *DynamoDBService) UpdateBlackoutWindow(ctx context.Context, windowID string, body model.BlackoutWindowBody) error {
+	dow, err := attributevalue.Marshal(body.DaysOfWeek)
+	if err != nil {
+		return err
+	}
+	_, err = s.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(tableBlackout),
+		Key: map[string]types.AttributeValue{
+			"windowId": &types.AttributeValueMemberS{Value: windowID},
+		},
+		UpdateExpression: aws.String("SET #n = :n, startTime = :st, endTime = :et, timezone = :tz, daysOfWeek = :dow, scope = :sc, reason = :r"),
+		ExpressionAttributeNames: map[string]string{"#n": "name"},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":n":   &types.AttributeValueMemberS{Value: body.Name},
+			":st":  &types.AttributeValueMemberS{Value: body.StartTime},
+			":et":  &types.AttributeValueMemberS{Value: body.EndTime},
+			":tz":  &types.AttributeValueMemberS{Value: body.Timezone},
+			":dow": dow,
+			":sc":  &types.AttributeValueMemberS{Value: body.Scope},
+			":r":   &types.AttributeValueMemberS{Value: body.Reason},
+		},
+		ConditionExpression: aws.String("attribute_exists(windowId)"),
+	})
+	return err
+}
+
+func (s *DynamoDBService) DeleteBlackoutWindow(ctx context.Context, windowID string) error {
+	_, err := s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+		TableName: aws.String(tableBlackout),
+		Key: map[string]types.AttributeValue{
+			"windowId": &types.AttributeValueMemberS{Value: windowID},
+		},
+	})
+	return err
+}
+
+func (s *DynamoDBService) ToggleBlackoutWindow(ctx context.Context, windowID string, active bool) error {
+	_, err := s.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(tableBlackout),
+		Key: map[string]types.AttributeValue{
+			"windowId": &types.AttributeValueMemberS{Value: windowID},
+		},
+		UpdateExpression: aws.String("SET active = :a"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":a": &types.AttributeValueMemberBOOL{Value: active},
+		},
+		ConditionExpression: aws.String("attribute_exists(windowId)"),
+	})
+	return err
+}
+
+// CheckBlackout returns the first active blackout window that blocks the given project+operation.
+// Returns nil if no window is blocking.
+func (s *DynamoDBService) CheckBlackout(ctx context.Context, project string, operation model.OperationType) (*model.BlackoutWindow, error) {
+	out, err := s.client.Scan(ctx, &dynamodb.ScanInput{
+		TableName:        aws.String(tableBlackout),
+		FilterExpression: aws.String("active = :t"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":t": &types.AttributeValueMemberBOOL{Value: true},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var windows []model.BlackoutWindow
+	if err := attributevalue.UnmarshalListOfMaps(out.Items, &windows); err != nil {
+		return nil, err
+	}
+	for i := range windows {
+		w := &windows[i]
+		if windowBlocks(w, project, string(operation)) {
+			return w, nil
+		}
+	}
+	return nil, nil
+}
+
+// windowBlocks checks whether window w blocks the given project+operation at the current moment.
+func windowBlocks(w *model.BlackoutWindow, project, operation string) bool {
+	loc, err := time.LoadLocation(w.Timezone)
+	if err != nil {
+		loc = time.UTC
+	}
+	now := time.Now().In(loc)
+
+	// Check day of week
+	day := now.Weekday().String()[:3] // "Mon", "Tue", ...
+	dayMatch := false
+	for _, d := range w.DaysOfWeek {
+		if strings.EqualFold(d, day) {
+			dayMatch = true
+			break
+		}
+	}
+	if !dayMatch {
+		return false
+	}
+
+	// Check time range (HH:MM format)
+	currentHHMM := fmt.Sprintf("%02d:%02d", now.Hour(), now.Minute())
+	if currentHHMM < w.StartTime || currentHHMM >= w.EndTime {
+		return false
+	}
+
+	// Check scope
+	scope := w.Scope
+	if scope == "" || scope == "all" {
+		return true
+	}
+	if strings.HasPrefix(scope, "project:") {
+		targetProject := strings.TrimPrefix(scope, "project:")
+		return strings.EqualFold(targetProject, project)
+	}
+	if strings.HasPrefix(scope, "operation:") {
+		ops := strings.Split(strings.TrimPrefix(scope, "operation:"), ",")
+		for _, op := range ops {
+			if strings.EqualFold(strings.TrimSpace(op), operation) {
+				return true
+			}
+		}
+		return false
+	}
+	return true
+}
+
+// ── AWS Accounts ──────────────────────────────────────────────────────────────
+
+func (s *DynamoDBService) CreateAWSAccount(ctx context.Context, a model.AWSAccount) (*model.AWSAccount, error) {
+	item, err := attributevalue.MarshalMap(a)
+	if err != nil {
+		return nil, err
+	}
+	_, err = s.client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName:           aws.String(tableAccounts),
+		Item:                item,
+		ConditionExpression: aws.String("attribute_not_exists(accountId)"),
+	})
+	return &a, err
+}
+
+func (s *DynamoDBService) ListAWSAccounts(ctx context.Context) ([]model.AWSAccount, error) {
+	out, err := s.client.Scan(ctx, &dynamodb.ScanInput{TableName: aws.String(tableAccounts)})
+	if err != nil {
+		return nil, err
+	}
+	var accounts []model.AWSAccount
+	return accounts, attributevalue.UnmarshalListOfMaps(out.Items, &accounts)
+}
+
+func (s *DynamoDBService) GetAWSAccount(ctx context.Context, accountID string) (*model.AWSAccount, error) {
+	out, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: aws.String(tableAccounts),
+		Key:       map[string]types.AttributeValue{"accountId": &types.AttributeValueMemberS{Value: accountID}},
+	})
+	if err != nil || out.Item == nil {
+		return nil, err
+	}
+	var a model.AWSAccount
+	err = attributevalue.UnmarshalMap(out.Item, &a)
+	return &a, err
+}
+
+func (s *DynamoDBService) DeleteAWSAccount(ctx context.Context, accountID string) error {
+	_, err := s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+		TableName: aws.String(tableAccounts),
+		Key:       map[string]types.AttributeValue{"accountId": &types.AttributeValueMemberS{Value: accountID}},
+	})
+	return err
+}
+
+// ── Account Members ───────────────────────────────────────────────────────────
+
+func (s *DynamoDBService) AddAccountMember(ctx context.Context, m model.AccountMember) error {
+	item, err := attributevalue.MarshalMap(m)
+	if err != nil {
+		return err
+	}
+	_, err = s.client.PutItem(ctx, &dynamodb.PutItemInput{TableName: aws.String(tableMembers), Item: item})
+	return err
+}
+
+func (s *DynamoDBService) RemoveAccountMember(ctx context.Context, userID, accountID string) error {
+	_, err := s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+		TableName: aws.String(tableMembers),
+		Key: map[string]types.AttributeValue{
+			"userId":    &types.AttributeValueMemberS{Value: userID},
+			"accountId": &types.AttributeValueMemberS{Value: accountID},
+		},
+	})
+	return err
+}
+
+// ListAccountMembers returns all users assigned to an account.
+func (s *DynamoDBService) ListAccountMembers(ctx context.Context, accountID string) ([]model.AccountMember, error) {
+	out, err := s.client.Query(ctx, &dynamodb.QueryInput{
+		TableName:              aws.String(tableMembers),
+		IndexName:              aws.String("accountId-index"),
+		KeyConditionExpression: aws.String("accountId = :aid"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":aid": &types.AttributeValueMemberS{Value: accountID},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var members []model.AccountMember
+	return members, attributevalue.UnmarshalListOfMaps(out.Items, &members)
+}
+
+// ListUserAccounts returns all accounts a user has access to.
+func (s *DynamoDBService) ListUserAccounts(ctx context.Context, userID string) ([]model.AWSAccount, error) {
+	out, err := s.client.Query(ctx, &dynamodb.QueryInput{
+		TableName:              aws.String(tableMembers),
+		KeyConditionExpression: aws.String("userId = :uid"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":uid": &types.AttributeValueMemberS{Value: userID},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var members []model.AccountMember
+	if err := attributevalue.UnmarshalListOfMaps(out.Items, &members); err != nil {
+		return nil, err
+	}
+	var accounts []model.AWSAccount
+	for _, m := range members {
+		acc, err := s.GetAWSAccount(ctx, m.AccountID)
+		if err != nil || acc == nil {
+			continue
+		}
+		accounts = append(accounts, *acc)
+	}
+	return accounts, nil
 }

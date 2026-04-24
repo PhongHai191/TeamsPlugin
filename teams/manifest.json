@@ -34,7 +34,7 @@
   "permissions": ["identity", "messageTeamMembers"],
   "validDomains": ["fragrant-sun-4b45.hieulun76a.workers.dev"],
   "webApplicationInfo": {
-    "id": "00000000-0000-0000-0000-000000000000",
-    "resource": "api://fragrant-sun-4b45.hieulun76a.workers.dev/00000000-0000-0000-0000-000000000000"
+    "id": "{{AZURE_AD_APP_CLIENT_ID}}",
+    "resource": "api://fragrant-sun-4b45.hieulun76a.workers.dev/{{AZURE_AD_APP_CLIENT_ID}}"
   }
 }

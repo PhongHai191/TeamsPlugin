@@ -35,12 +35,34 @@ func (h *RequestsHandler) CreateRequest(c *gin.Context) {
 	userID, _ := c.Get(middleware.ContextKeyUserID)
 	userName, _ := c.Get(middleware.ContextKeyUserName)
 
+	op := body.Operation
+	if op == "" {
+		op = model.OperationReboot
+	}
+
+	blocked, err := h.db.CheckBlackout(c.Request.Context(), body.Project, op)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "blackout check failed"})
+		return
+	}
+	if blocked != nil {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":      "operation blocked by blackout window",
+			"windowName": blocked.Name,
+			"reason":     blocked.Reason,
+			"endTime":    blocked.EndTime,
+		})
+		return
+	}
+
 	req := model.RestartRequest{
 		UserID:       userID.(string),
 		UserName:     userName.(string),
 		InstanceID:   body.InstanceID,
 		InstanceName: body.InstanceName,
 		Region:       body.Region,
+		AccountID:    body.AccountID,
+		Operation:    op,
 		Reason:       body.Reason,
 	}
 	created, err := h.db.CreateRequest(c.Request.Context(), req)

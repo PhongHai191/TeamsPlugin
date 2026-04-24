@@ -43,6 +43,8 @@ func main() {
 	usersHandler := handler.NewUsersHandler(dbSvc)
 	totpHandler := handler.NewTOTPHandler(dbSvc, ec2Svc)
 	mfaHandler := handler.NewMFAHandler(dbSvc, ec2Svc)
+	blackoutHandler := handler.NewBlackoutHandler(dbSvc)
+	accountsHandler := handler.NewAccountsHandler(dbSvc, ec2Svc)
 
 	r := gin.Default()
 
@@ -78,9 +80,22 @@ func main() {
 			admin.POST("/mfa/challenge/:id/verify", mfaHandler.Verify)
 		}
 
+		admin.GET("/blackout", blackoutHandler.List)
+
 		root := group.Group("/root", rootOnly)
 		{
 			root.POST("/users/role", usersHandler.UpdateUserRole)
+			root.POST("/blackout", blackoutHandler.Create)
+			root.PUT("/blackout/:id", blackoutHandler.Update)
+			root.DELETE("/blackout/:id", blackoutHandler.Delete)
+			root.PATCH("/blackout/:id/toggle", blackoutHandler.Toggle)
+			root.GET("/accounts", accountsHandler.List)
+			root.POST("/accounts", accountsHandler.Create)
+			root.DELETE("/accounts/:id", accountsHandler.Delete)
+			root.GET("/accounts/:id/members", accountsHandler.ListMembers)
+			root.POST("/accounts/:id/members", accountsHandler.AddMember)
+			root.DELETE("/accounts/:id/members/:userId", accountsHandler.RemoveMember)
+			root.GET("/accounts/generate-external-id", accountsHandler.GenerateExternalID)
 		}
 	}
 

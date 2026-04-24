@@ -157,9 +157,39 @@ func (h *TOTPHandler) ApproveWithOTP(c *gin.Context) {
 		return
 	}
 
-	log.Printf("[APPROVE] TOTP verified — rebooting %s", req.InstanceID)
-	if err := h.ec2Svc.RebootInstance(c.Request.Context(), req.InstanceID, req.Region); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "ec2 reboot failed: " + err.Error()})
+	op := req.Operation
+	if op == "" {
+		op = model.OperationReboot
+	}
+
+	blocked, err := h.db.CheckBlackout(c.Request.Context(), "", op)
+	if err == nil && blocked != nil {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":      "operation blocked by blackout window",
+			"windowName": blocked.Name,
+			"reason":     blocked.Reason,
+		})
+		return
+	}
+
+	log.Printf("[APPROVE] TOTP verified — executing %s on %s", op, req.InstanceID)
+
+	userEmail, _ := c.Get(middleware.ContextKeyEmail)
+	email, _ := userEmail.(string)
+
+	var execErr error
+	if req.AccountID != "" {
+		acc, err := h.db.GetAWSAccount(c.Request.Context(), req.AccountID)
+		if err != nil || acc == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "account not found: " + req.AccountID})
+			return
+		}
+		execErr = h.ec2Svc.ExecuteOperationWithRole(c.Request.Context(), req.InstanceID, req.Region, op, *acc, email)
+	} else {
+		execErr = h.ec2Svc.ExecuteOperation(c.Request.Context(), req.InstanceID, req.Region, op)
+	}
+	if execErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": string(op) + " failed: " + execErr.Error()})
 		return
 	}
 	displayName, _ := c.Get(middleware.ContextKeyUserName)
@@ -169,5 +199,5 @@ func (h *TOTPHandler) ApproveWithOTP(c *gin.Context) {
 		return
 	}
 	log.Printf("[APPROVE] Done — request %s approved by %s", body.RequestID, userID)
-	c.JSON(http.StatusOK, gin.H{"message": "approved and rebooted"})
+	c.JSON(http.StatusOK, gin.H{"message": string(op) + " approved and executed"})
 }
