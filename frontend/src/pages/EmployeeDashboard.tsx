@@ -29,7 +29,7 @@ export function EmployeeDashboard({ user, view, onToggleSidebar }: Props) {
     setLoading(true)
     try {
       const data = await listInstances()
-      setInstances(data)
+      setInstances(data || [])
     } catch (e) {
       console.error(e)
     }
@@ -40,7 +40,7 @@ export function EmployeeDashboard({ user, view, onToggleSidebar }: Props) {
     setLoading(true)
     try {
       const data = await listMyRequests()
-      setRequests(data)
+      setRequests(data || [])
     } catch (e) {
       console.error(e)
     }

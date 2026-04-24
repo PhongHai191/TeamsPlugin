@@ -11,7 +11,7 @@ export function setAuthToken(token: string) {
 
 // EC2
 export const listInstances = (): Promise<EC2Instance[]> =>
-  api.get('/ec2/instances').then(r => r.data)
+  api.get('/ec2/instances').then(r => r.data || [])
 
 // Employee requests
 export const createRequest = (payload: {
@@ -26,11 +26,11 @@ export const createRequest = (payload: {
   api.post('/requests', payload).then(r => r.data)
 
 export const listMyRequests = (): Promise<RestartRequest[]> =>
-  api.get('/requests/me').then(r => r.data)
+  api.get('/requests/me').then(r => r.data || [])
 
 // Admin
 export const listAllRequests = (status?: string): Promise<RestartRequest[]> =>
-  api.get('/admin/requests', { params: status ? { status } : {} }).then(r => r.data)
+  api.get('/admin/requests', { params: status ? { status } : {} }).then(r => r.data || [])
 
 export const approveRequest = (requestId: string): Promise<void> =>
   api.post('/admin/requests/approve', { requestId }).then(r => r.data)
@@ -39,10 +39,10 @@ export const denyRequest = (requestId: string, denyReason: string): Promise<void
   api.post('/admin/requests/deny', { requestId, denyReason }).then(r => r.data)
 
 export const getRebootHistory = (instanceId: string): Promise<RestartRequest[]> =>
-  api.get(`/admin/ec2/${instanceId}/reboot-history`).then(r => r.data)
+  api.get(`/admin/ec2/${instanceId}/reboot-history`).then(r => r.data || [])
 
 export const listUsers = (): Promise<User[]> =>
-  api.get('/admin/users').then(r => r.data)
+  api.get('/admin/users').then(r => r.data || [])
 
 export const updateUserRole = (teamsUserId: string, role: Role): Promise<void> =>
   api.post('/root/users/role', { teamsUserId, role }).then(r => r.data)
@@ -80,7 +80,7 @@ export const approveRequestWithOTP = (requestId: string, totpCode: string): Prom
 
 // Blackout Windows
 export const listBlackoutWindows = (): Promise<BlackoutWindow[]> =>
-  api.get('/admin/blackout').then(r => r.data)
+  api.get('/admin/blackout').then(r => r.data || [])
 
 export const createBlackoutWindow = (payload: {
   name: string
@@ -112,7 +112,7 @@ export const toggleBlackoutWindow = (id: string, active: boolean): Promise<void>
 
 // AWS Accounts
 export const listAccounts = (): Promise<AWSAccount[]> =>
-  api.get('/root/accounts').then(r => r.data)
+  api.get('/root/accounts').then(r => r.data || [])
 
 export const createAccount = (payload: {
   accountId: string
@@ -131,7 +131,7 @@ export const generateExternalId = (): Promise<{ externalId: string }> =>
   api.get('/root/accounts/generate-external-id').then(r => r.data)
 
 export const listAccountMembers = (accountId: string): Promise<AccountMember[]> =>
-  api.get(`/root/accounts/${accountId}/members`).then(r => r.data)
+  api.get(`/root/accounts/${accountId}/members`).then(r => r.data || [])
 
 export const addAccountMember = (accountId: string, userId: string): Promise<AccountMember> =>
   api.post(`/root/accounts/${accountId}/members`, { userId }).then(r => r.data)
