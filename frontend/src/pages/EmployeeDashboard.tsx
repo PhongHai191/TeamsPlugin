@@ -104,7 +104,7 @@ export function EmployeeDashboard({ user, view, onToggleSidebar }: Props) {
             <div className="hero-right">
               <div className="hero-status-text">{instances.length} total, {running} running</div>
               <button className="btn-ghost" onClick={fetchInstances} disabled={loading}>
-                {loading ? 'Scanning...' : '🔄 Scan'}
+                {loading ? 'Scanning...' : <><ArrowClockwise20Regular style={{ marginRight: 6, verticalAlign: 'middle' }} />Scan</>}
               </button>
             </div>
           </div>
@@ -222,7 +222,7 @@ return (
                   <td className="name-cell"><span className="server-icon" style={{ verticalAlign: 'middle', display: 'inline-block' }}><Server24Regular fontSize={16} /></span>{req.instanceName}</td>
                   <td><span className={`op-badge op-${req.operation || 'reboot'}`}>{req.operation || 'reboot'}</span></td>
                   <td style={{ maxWidth: 200 }}>{req.reason}</td>
-                  <td className="id-cell">{new Date(req.createdAt).toLocaleString()}</td>
+                  <td className="id-cell">{new Date(req.createdAt).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
                   <td>
                     <div className="status-badge">
                       <span className={`status-dot dot-${req.status === 'approved' ? 'running' : req.status === 'denied' ? 'stopped' : 'pending'}`}></span>

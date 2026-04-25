@@ -328,7 +328,7 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
                             Rebooted
                           </span>
                           <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                            {new Date(r.updatedAt).toLocaleString()}
+                            {new Date(r.updatedAt).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
                         <div style={{ marginTop: 6, fontSize: 12, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -476,7 +476,7 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
                   <td className="name-cell">{req.userName}</td>
                   <td><span className="server-icon" style={{ verticalAlign: 'middle', display: 'inline-block' }}><Server24Regular fontSize={16} /></span>{req.instanceName}</td>
                   <td><span className={`op-badge op-${req.operation || 'reboot'}`}>{req.operation || 'reboot'}</span></td>
-                  <td className="id-cell">{new Date(req.createdAt).toLocaleString()}</td>
+                  <td className="id-cell">{new Date(req.createdAt).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
                   <td><div className="status-badge"><span className={`status-dot dot-${req.status === 'approved' ? 'running' : req.status === 'denied' ? 'stopped' : 'pending'}`} />{req.status}</div></td>
                   <td className="action-cell">
                     {req.status === 'pending' ? (

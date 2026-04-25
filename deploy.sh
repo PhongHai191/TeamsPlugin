@@ -65,12 +65,10 @@ deploy_frontend() {
   npm run build || error "Frontend build failed"
   success "Frontend build complete ($(du -sh dist | cut -f1))"
 
-  info "Deploying to Cloudflare Pages: $CF_PROJECT_NAME..."
-  npx wrangler pages deploy dist \
-    --project-name "$CF_PROJECT_NAME" \
-    --commit-dirty=true \
-    || error "Cloudflare Pages deploy failed"
-  success "Frontend deployed to Cloudflare Pages"
+  info "Deploying to Cloudflare Workers: $CF_PROJECT_NAME..."
+  npx wrangler deploy \
+    || error "Cloudflare Workers deploy failed"
+  success "Frontend deployed to Cloudflare Workers"
 
   cd "$ROOT_DIR"
 }

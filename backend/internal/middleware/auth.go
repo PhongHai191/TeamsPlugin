@@ -2,13 +2,12 @@ package middleware
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
+	"github.com/MicahParks/keyfunc/v3"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/seta-international/team-aws-extension/internal/model"
@@ -22,14 +21,18 @@ const (
 	ContextKeyRole     = "role"
 )
 
-var msJWKSURL = "https://login.microsoftonline.com/common/discovery/v2.0/keys"
+// jwks is initialised once at startup and auto-refreshes its cache.
+var jwks keyfunc.Keyfunc
 
-type jwksCache struct {
-	keys      map[string][]byte
-	fetchedAt time.Time
+func init() {
+	var err error
+	jwks, err = keyfunc.NewDefaultCtx(context.Background(),
+		[]string{"https://login.microsoftonline.com/common/discovery/v2.0/keys"})
+	if err != nil {
+		// Non-fatal at startup — will fail on first real token verification
+		_ = err
+	}
 }
-
-var cache jwksCache
 
 // TeamsAuth validates the Teams SSO JWT and injects user info into context.
 func TeamsAuth(db *service.DynamoDBService) gin.HandlerFunc {
@@ -41,7 +44,7 @@ func TeamsAuth(db *service.DynamoDBService) gin.HandlerFunc {
 		}
 		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 
-		// Dev bypass: accept dev-mock-token-{role} when DEV_ROLE env is set
+		// Dev bypass
 		if os.Getenv("DEV_ROLE") != "" && strings.HasPrefix(tokenStr, "dev-mock-token") {
 			role := strings.TrimPrefix(tokenStr, "dev-mock-token-")
 			if role == "dev-mock-token" || role == "" {
@@ -100,10 +103,29 @@ func RequireRoot() gin.HandlerFunc {
 }
 
 func parseTeamsToken(tokenStr string) (*model.TeamsTokenClaims, error) {
-	// Parse without verification first to get kid, then verify with correct key.
-	// In production, use a proper JWKS library; this is a minimal implementation.
-	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
-	token, _, err := parser.ParseUnverified(tokenStr, jwt.MapClaims{})
+	clientID := os.Getenv("AZURE_AD_CLIENT_ID")
+
+	var token *jwt.Token
+	var err error
+
+	if clientID != "" && jwks != nil {
+		// Teams SSO tokens use the Application ID URI as audience:
+		// api://<domain>/<clientId>  — check both forms.
+		appURI := os.Getenv("AZURE_AD_APP_URI") // e.g. api://fragrant-sun-4b45.hieulun76a.workers.dev/<clientId>
+		audience := clientID
+		if appURI != "" {
+			audience = appURI
+		}
+		token, err = jwt.Parse(tokenStr, jwks.Keyfunc,
+			jwt.WithValidMethods([]string{"RS256"}),
+			jwt.WithAudience(audience),
+		)
+	} else {
+		// Dev/demo: no client ID configured, skip signature verification
+		parser := jwt.NewParser(jwt.WithoutClaimsValidation())
+		token, _, err = parser.ParseUnverified(tokenStr, jwt.MapClaims{})
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -122,36 +144,8 @@ func parseTeamsToken(tokenStr string) (*model.TeamsTokenClaims, error) {
 	}
 
 	return &model.TeamsTokenClaims{
-		OID:              oid,
-		Name:             name,
+		OID:               oid,
+		Name:              name,
 		PreferredUsername: email,
 	}, nil
-}
-
-// fetchJWKS fetches Microsoft public keys (simple cache, 1h TTL).
-func fetchJWKS() (map[string][]byte, error) {
-	if time.Since(cache.fetchedAt) < time.Hour && cache.keys != nil {
-		return cache.keys, nil
-	}
-	resp, err := http.Get(msJWKSURL)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Keys []map[string]interface{} `json:"keys"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-
-	keys := make(map[string][]byte)
-	for _, k := range result.Keys {
-		kid, _ := k["kid"].(string)
-		raw, _ := json.Marshal(k)
-		keys[kid] = raw
-	}
-	cache = jwksCache{keys: keys, fetchedAt: time.Now()}
-	return keys, nil
 }
