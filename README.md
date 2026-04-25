@@ -6,10 +6,12 @@ Microsoft Teams Tab App for managing AWS EC2 server restart requests with role-b
 
 ## Features
 
-- **Employee**: Request restart for tagged EC2 instances, track request status (pending / approved / denied) with denial reason
-- **Admin**: View all requests, approve (requires TOTP code → auto-reboots EC2) or deny with reason, view EC2 reboot history from CloudTrail, view users with role `user`
-- **Root**: All admin permissions + manage user roles (promote user → admin, demote admin → user), view all users
-- **TOTP 2FA**: Admin/root must set up Google Authenticator before they can approve any request
+- **Employee**: Request reboot/stop/start for tagged EC2 instances, track request status with denial reason
+- **Admin**: View all requests, approve (requires TOTP) or deny, view operation history per instance
+- **Root**: All admin + manage users, manage AWS accounts, manage blackout windows
+- **Multi-Account**: Hub-and-Spoke AssumeRole — manage EC2 across multiple AWS accounts from one app
+- **Blackout Windows**: Block operations during maintenance windows (by timezone, day-of-week, time range)
+- **TOTP 2FA**: Admin/root must set up Google Authenticator before approving any request
 - **UI**: Fluent UI v9 — native Teams look and feel
 
 ---
@@ -21,11 +23,12 @@ Teams Tab (React + Vite)
         │
         │  Teams SSO token (JWT)
         ▼
-Go API Server (Gin) — port 8081
+Go API Server (Gin) — Lambda / port 8081
         │
-        ├── DynamoDB ── users, restart-requests
-        ├── AWS EC2  ── DescribeInstances, RebootInstances
-        └── CloudTrail── LookupEvents (reboot history)
+        ├── DynamoDB ── users, restart-requests, blackout-windows, aws-accounts, account-members
+        ├── AWS EC2  ── DescribeInstances, Reboot/Stop/StartInstances (hub account)
+        ├── STS      ── AssumeRole → EC2 in spoke accounts
+        └── CloudTrail── LookupEvents (operation history)
 ```
 
 ---
@@ -129,6 +132,99 @@ npm run dev
 - `http://localhost:5173?role=root` → Root view
 - `http://localhost:5173?role=admin` → Admin view
 - `http://localhost:5173?role=user` → Employee view
+
+---
+
+## Multi-Account Setup (Hub-and-Spoke)
+
+Allows managing EC2 instances across multiple AWS accounts. The Lambda (hub) assumes an IAM role in each spoke account.
+
+### Step 1 — Create IAM Role in each spoke account
+
+In each AWS account you want to manage, create an IAM Role:
+
+**Trust policy** (allow hub account to assume):
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {
+      "AWS": "arn:aws:iam::<HUB_ACCOUNT_ID>:role/<LambdaExecutionRole>"
+    },
+    "Action": "sts:AssumeRole",
+    "Condition": {
+      "StringEquals": { "sts:ExternalId": "<ExternalId from app>" }
+    }
+  }]
+}
+```
+
+**Permission policy** (attach to the role):
+```json
+{
+  "Effect": "Allow",
+  "Action": [
+    "ec2:DescribeInstances",
+    "ec2:RebootInstances",
+    "ec2:StopInstances",
+    "ec2:StartInstances"
+  ],
+  "Resource": "*"
+}
+```
+
+Also add `sts:AssumeRole` to the **hub account's Lambda execution role**.
+
+### Step 2 — Add account in app (Root only)
+
+1. Go to **AWS Accounts** tab in the app
+2. Click **Add Account** and fill in:
+   - **Account ID** — 12-digit AWS account number
+   - **Alias** — friendly name (e.g. "Production", "Staging")
+   - **Role ARN** — `arn:aws:iam::<account_id>:role/<role_name>`
+   - **External ID** — click **Generate** to create one, then paste it into the IAM trust policy above
+   - **Regions** — comma-separated list of regions to scan (e.g. `us-west-2,ap-southeast-1`)
+   - **Project** — optional tag for grouping
+
+3. Click **Create**
+
+### Step 3 — Assign users to account
+
+In the **Members** column, click the user icon → add users who are allowed to see and operate EC2 in that account.
+
+Users not assigned to any account see only the hub account's EC2 instances.
+
+> **CloudTrail audit**: Each AssumeRole session uses the user's email as `RoleSessionName`, so CloudTrail in spoke accounts records who performed each operation.
+
+---
+
+## Blackout Windows (Root only)
+
+Prevents operations (reboot/stop/start) during scheduled maintenance periods. Checked at both **request submit time** and **approve time**.
+
+### Creating a blackout window
+
+1. Go to **Blackout Windows** tab
+2. Click **Add Window** and fill in:
+   - **Name** — descriptive label (e.g. "Weekend Freeze", "Business Hours")
+   - **Start Time / End Time** — 24h format (e.g. `22:00` – `06:00`)
+   - **Timezone** — IANA timezone (e.g. `Asia/Ho_Chi_Minh`, `UTC`, `America/New_York`)
+   - **Days of Week** — select which days apply
+   - **Scope** — what to block:
+     - `all` — blocks all operations
+     - `operation:stop` — blocks only Stop operations
+     - `project:ProjectName` — blocks only instances tagged with that project
+   - **Reason** — shown to users when their request is blocked
+
+3. Toggle **Active/Inactive** at any time without deleting the window
+
+### Behaviour
+
+| When blocked | What happens |
+|---|---|
+| User submits request | Request rejected immediately with reason |
+| Admin approves request | Approval rejected even if request was created before the window |
 
 ---
 

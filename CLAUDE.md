@@ -69,6 +69,14 @@ In dev mode (`GIN_MODE != release`), if the token is `dev-mock-token`, TOTP veri
 | PUT | `/api/root/blackout/:id` | root | Update blackout window |
 | DELETE | `/api/root/blackout/:id` | root | Delete blackout window |
 | PATCH | `/api/root/blackout/:id/toggle?active=true\|false` | root | Enable/disable window |
+| GET | `/api/root/accounts` | root | List AWS accounts |
+| POST | `/api/root/accounts` | root | Add AWS account |
+| DELETE | `/api/root/accounts/:id` | root | Remove AWS account |
+| GET | `/api/root/accounts/generate-external-id` | root | Generate random ExternalId |
+| GET | `/api/root/accounts/:id/members` | root | List account members |
+| POST | `/api/root/accounts/:id/members` | root | Add member to account |
+| DELETE | `/api/root/accounts/:id/members/:userId` | root | Remove member from account |
+| GET | `/api/me` | any | Current user profile + role from DynamoDB |
 
 ## Roles
 
@@ -91,7 +99,19 @@ In dev mode (`GIN_MODE != release`), if the token is `dev-mock-token`, TOTP veri
 ### `restart-requests`
 - PK: `requestId` (UUID)
 - GSI: `userId-createdAt-index`
-- Attributes: `userId`, `userName`, `instanceId`, `instanceName`, `reason`, `status`, `denyReason`, `createdAt`, `updatedAt`
+- Attributes: `userId`, `userName`, `instanceId`, `instanceName`, `region`, `reason`, `operation` (`reboot`|`stop`|`start`), `accountId`, `status`, `denyReason`, `createdAt`, `updatedAt`, `approvedBy`, `approvedByName`
+
+### `blackout-windows`
+- PK: `windowId` (UUID)
+- Attributes: `name`, `startTime`, `endTime`, `timezone`, `daysOfWeek`, `scope`, `reason`, `active`
+
+### `aws-accounts`
+- PK: `accountId` (AWS 12-digit account ID)
+- Attributes: `alias`, `roleArn`, `externalId`, `regions`, `project`
+
+### `account-members`
+- PK: `accountId`, SK: `userId`
+- Attributes: `addedAt`
 
 ## TOTP Flow
 
@@ -161,6 +181,30 @@ aws dynamodb create-table \
   --billing-mode PAY_PER_REQUEST \
   --region ap-southeast-1
 ```
+
+## Multi-Account (Hub-and-Spoke)
+
+**Flow:**
+1. Root adds an AWS account via UI → stored in `aws-accounts` table with `roleArn` + `externalId`
+2. Root assigns users to accounts via `account-members` table
+3. On `GET /ec2/instances`: backend checks which accounts the user is a member of → AssumeRole per account → aggregate instances
+4. On approve: `ExecuteOperationWithRole` if `req.AccountID != ""`, else use hub credentials
+5. `RoleSessionName = sanitized(userEmail)` → CloudTrail in spoke account records who ran the operation
+
+**ExternalId**: Generated randomly per account registration. Prevents Confused Deputy Attack — the spoke role's trust policy must include `sts:ExternalId` condition.
+
+**Hub fallback**: If user has no account memberships → shows hub account EC2 only.
+
+## Blackout Windows
+
+- Stored in `blackout-windows` table, checked in `service.CheckBlackout(ctx, operation, project)`
+- Checked at two points: `CreateRequest` and `ApproveWithOTP`
+- `scope` field controls what is blocked:
+  - `all` — every operation
+  - `operation:stop` — only stop operations
+  - `project:X` — only instances with project tag matching X
+- Timezone conversion uses `time.LoadLocation(window.Timezone)` — must be valid IANA tz string
+- `active` flag allows toggling without deleting (PATCH `/root/blackout/:id/toggle?active=true|false`)
 
 ## Key Design Decisions
 
