@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { ArrowClockwise20Regular } from '@fluentui/react-icons'
 import {
   listBlackoutWindows, createBlackoutWindow, updateBlackoutWindow,
   deleteBlackoutWindow, toggleBlackoutWindow,
@@ -151,7 +152,7 @@ export function BlackoutWindows({ onToggleSidebar }: Props) {
           </div>
           <div className="hero-right">
             <button className="btn-ghost" onClick={fetch} disabled={loading}>
-              {loading ? 'Loading...' : '🔄 Refresh'}
+              {loading ? 'Loading...' : <><ArrowClockwise20Regular style={{ marginRight: 6, verticalAlign: 'middle' }} />Refresh</>}
             </button>
           </div>
         </div>

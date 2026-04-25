@@ -314,18 +314,18 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
           <div className="modal-card" style={{ width: 620 }}>
             <div className="modal-header">
               <span className="modal-icon"><Document24Regular style={{ fontSize: 28 }} /></span>
-              <div><h2>Reboot History</h2><p className="modal-subtitle">{logsTarget?.name} ({logsTarget?.id})</p></div>
+              <div><h2>Operation History</h2><p className="modal-subtitle">{logsTarget?.name} ({logsTarget?.id})</p></div>
             </div>
             <div className="modal-body" style={{ maxHeight: 420, overflowY: 'auto' }}>
               {rebootLogs.length === 0
-                ? <p style={{ color: 'var(--text-muted)' }}>No reboot records found.</p>
+                ? <p style={{ color: 'var(--text-muted)' }}>No operation records found.</p>
                 : <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                     {rebootLogs.map(r => (
                       <li key={r.requestId} style={{ borderBottom: '1px solid var(--border-light)', padding: '12px 4px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontWeight: 600, fontSize: 13 }}>
-                            <CheckmarkCircle24Regular fontSize={13} style={{ color: 'var(--status-running)', marginRight: 5, verticalAlign: 'middle' }} />
-                            Rebooted
+                          <span style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <CheckmarkCircle24Regular fontSize={13} style={{ color: 'var(--status-running)', verticalAlign: 'middle' }} />
+                            <span className={`op-badge op-${r.operation || 'reboot'}`}>{r.operation || 'reboot'}</span>
                           </span>
                           <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
                             {new Date(r.updatedAt).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -459,7 +459,7 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
             <div className="greeting-block"><h1>Approval Queue</h1><p>Approve or deny infrastructure actions</p></div>
           </div>
           <div className="hero-right">
-            <button className="btn-ghost" onClick={fetchRequests} disabled={loading}>🔄 Refresh</button>
+            <button className="btn-ghost" onClick={fetchRequests} disabled={loading}>{loading ? 'Refreshing...' : <><ArrowClockwise20Regular style={{ marginRight: 6, verticalAlign: 'middle' }} />Refresh</>}</button>
           </div>
         </div>
         <div className="filter-tabs">

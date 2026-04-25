@@ -9,6 +9,9 @@ export function setAuthToken(token: string) {
   api.defaults.headers.common['Authorization'] = `Bearer ${token}`
 }
 
+export const getMe = (): Promise<{ teamsUserId: string; displayName: string; email: string; role: Role }> =>
+  api.get('/me').then(r => r.data)
+
 // EC2
 export const listInstances = (): Promise<EC2Instance[]> =>
   api.get('/ec2/instances').then(r => r.data || [])

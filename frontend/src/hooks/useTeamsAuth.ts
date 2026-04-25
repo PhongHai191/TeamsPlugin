@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import * as microsoftTeams from '@microsoft/teams-js'
-import { setAuthToken } from '../lib/api'
+import { getMe, setAuthToken } from '../lib/api'
 import type { CurrentUser, Role } from '../types'
 
 interface AuthState {
@@ -39,7 +39,7 @@ export function useTeamsAuth(): AuthState {
         const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject('Teams init timeout'), 2000))
         await Promise.race([microsoftTeams.app.initialize(), timeoutPromise])
 
-        const context = await microsoftTeams.app.getContext()
+        await microsoftTeams.app.getContext()
         const token = await new Promise<string>((resolve, reject) => {
           microsoftTeams.authentication.getAuthToken({
             successCallback: resolve,
@@ -48,12 +48,13 @@ export function useTeamsAuth(): AuthState {
         })
 
         setAuthToken(token)
+        const me = await getMe()
         setState({
           user: {
-            teamsUserId: context.user?.id ?? '',
-            displayName: context.user?.displayName ?? '',
-            email: context.user?.loginHint ?? '',
-            role: 'user',
+            teamsUserId: me.teamsUserId,
+            displayName: me.displayName,
+            email: me.email,
+            role: me.role,
           },
           token,
           loading: false,

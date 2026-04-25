@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -134,7 +135,13 @@ func (s *DynamoDBService) ListAllRequests(ctx context.Context, statusFilter stri
 		return nil, err
 	}
 	var requests []model.RestartRequest
-	return requests, attributevalue.UnmarshalListOfMaps(out.Items, &requests)
+	if err := attributevalue.UnmarshalListOfMaps(out.Items, &requests); err != nil {
+		return nil, err
+	}
+	sort.Slice(requests, func(i, j int) bool {
+		return requests[i].CreatedAt.After(requests[j].CreatedAt)
+	})
+	return requests, nil
 }
 
 func (s *DynamoDBService) UpdateRequestStatus(ctx context.Context, requestID string, status model.Status, denyReason string) error {

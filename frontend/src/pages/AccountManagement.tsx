@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { ArrowClockwise20Regular } from '@fluentui/react-icons'
 import {
   listAccounts, createAccount, deleteAccount, generateExternalId,
   listAccountMembers, addAccountMember, removeAccountMember, listUsers,
@@ -153,7 +154,7 @@ export function AccountManagement({ onToggleSidebar }: Props) {
           </div>
           <div className="hero-right">
             <button className="btn-ghost" onClick={fetchAccounts} disabled={loading}>
-              {loading ? 'Loading...' : '🔄 Refresh'}
+              {loading ? 'Loading...' : <><ArrowClockwise20Regular style={{ marginRight: 6, verticalAlign: 'middle' }} />Refresh</>}
             </button>
           </div>
         </div>

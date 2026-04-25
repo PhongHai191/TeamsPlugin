@@ -60,6 +60,14 @@ func main() {
 	rootOnly := middleware.RequireRoot()
 
 	setupRoutes := func(group *gin.RouterGroup) {
+		group.GET("/me", func(c *gin.Context) {
+			c.JSON(200, gin.H{
+				"teamsUserId": c.GetString(middleware.ContextKeyUserID),
+				"displayName": c.GetString(middleware.ContextKeyUserName),
+				"email":       c.GetString(middleware.ContextKeyEmail),
+				"role":        c.GetString(middleware.ContextKeyRole),
+			})
+		})
 		group.POST("/requests", reqHandler.CreateRequest)
 		group.GET("/requests/me", reqHandler.ListMyRequests)
 		group.GET("/ec2/instances", ec2Handler.ListInstances)
