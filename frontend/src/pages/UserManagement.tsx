@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { listUsers, updateUserRole } from '../lib/api'
 import type { Role, User } from '../types'
 import { People24Regular, PeopleTeam24Regular, ArrowClockwise20Regular, Navigation24Regular } from '@fluentui/react-icons'
+import { ConfirmDialog } from '../components/ConfirmDialog'
+import { Toast } from '../components/Toast'
 
 interface Props {
   callerRole: Role
@@ -12,6 +14,9 @@ export function UserManagement({ callerRole, onToggleSidebar }: Props) {
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(false)
   const [updating, setUpdating] = useState<string | null>(null)
+  const [confirmRole, setConfirmRole] = useState<{ user: User; newRole: Role } | null>(null)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const showToast = (message: string, type: 'success' | 'error' = 'error') => setToast({ message, type })
 
   const fetchUsers = async () => {
     setLoading(true)
@@ -27,14 +32,19 @@ export function UserManagement({ callerRole, onToggleSidebar }: Props) {
     fetchUsers()
   }, [])
 
-  const handleRoleChange = async (user: User, newRole: Role) => {
-    if (!confirm(`Change role of ${user.displayName} to ${newRole}?`)) return
+  const handleRoleChange = (user: User, newRole: Role) => setConfirmRole({ user, newRole })
+
+  const confirmRoleChange = async () => {
+    if (!confirmRole) return
+    const { user, newRole } = confirmRole
+    setConfirmRole(null)
     setUpdating(user.teamsUserId)
     try {
       await updateUserRole(user.teamsUserId, newRole)
       fetchUsers()
+      showToast(`Role updated to ${newRole}`, 'success')
     } catch (e: any) {
-      alert('Failed to update role: ' + (e?.response?.data?.error || e.message))
+      showToast('Failed to update role: ' + (e?.response?.data?.error || e.message))
     }
     setUpdating(null)
   }
@@ -123,6 +133,16 @@ export function UserManagement({ callerRole, onToggleSidebar }: Props) {
           </table>
         </div>
       </div>
+      {confirmRole && (
+        <ConfirmDialog
+          title="Change user role"
+          message={`Change role of ${confirmRole.user.displayName} to "${confirmRole.newRole}"?`}
+          confirmLabel="Change"
+          onConfirm={confirmRoleChange}
+          onCancel={() => setConfirmRole(null)}
+        />
+      )}
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   )
 }

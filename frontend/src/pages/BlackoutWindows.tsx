@@ -9,6 +9,8 @@ import {
   Clock24Regular, Add24Regular, Delete24Regular, Edit24Regular,
   Navigation24Regular, CheckmarkCircle24Regular, DismissCircle24Regular,
 } from '@fluentui/react-icons'
+import { ConfirmDialog } from '../components/ConfirmDialog'
+import { Toast } from '../components/Toast'
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -54,6 +56,9 @@ export function BlackoutWindows({ onToggleSidebar }: Props) {
   const [editTarget, setEditTarget] = useState<BlackoutWindow | null>(null)
   const [form, setForm] = useState<FormState>(emptyForm())
   const [saving, setSaving] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<BlackoutWindow | null>(null)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const showToast = (message: string, type: 'success' | 'error' = 'error') => setToast({ message, type })
 
   const fetch = async () => {
     setLoading(true)
@@ -94,20 +99,23 @@ export function BlackoutWindows({ onToggleSidebar }: Props) {
       setModalOpen(false)
       await fetch()
     } catch (e: any) {
-      alert('Save failed: ' + (e?.response?.data?.error || e.message))
+      showToast('Save failed: ' + (e?.response?.data?.error || e.message))
     }
     setSaving(false)
   }
 
-  const handleDelete = async (w: BlackoutWindow) => {
-    if (!confirm(`Delete blackout window "${w.name}"?`)) return
-    try { await deleteBlackoutWindow(w.windowId); await fetch() }
-    catch { alert('Delete failed') }
+  const handleDelete = (w: BlackoutWindow) => setConfirmDelete(w)
+
+  const confirmDeleteWindow = async () => {
+    if (!confirmDelete) return
+    try { await deleteBlackoutWindow(confirmDelete.windowId); await fetch(); showToast('Deleted', 'success') }
+    catch { showToast('Delete failed') }
+    setConfirmDelete(null)
   }
 
   const handleToggle = async (w: BlackoutWindow) => {
     try { await toggleBlackoutWindow(w.windowId, !w.active); await fetch() }
-    catch { alert('Toggle failed') }
+    catch { showToast('Toggle failed') }
   }
 
   const toggleDay = (day: string) => {
@@ -287,6 +295,18 @@ export function BlackoutWindows({ onToggleSidebar }: Props) {
           </div>
         </div>
       )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete blackout window"
+          message={`Delete "${confirmDelete.name}"?`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={confirmDeleteWindow}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   )
 }

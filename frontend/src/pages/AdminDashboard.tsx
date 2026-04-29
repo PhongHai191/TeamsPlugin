@@ -5,6 +5,8 @@ import {
   getTOTPSetup, verifyTOTPSetup, resetTOTP,
 } from '../lib/api'
 import type { CurrentUser, EC2Instance, OperationType, RestartRequest } from '../types'
+import { ConfirmDialog } from '../components/ConfirmDialog'
+import { Toast } from '../components/Toast'
 import { QRCodeSVG } from 'qrcode.react'
 import {
   Server24Regular, Clipboard24Regular, WeatherPartlyCloudyDay24Regular,
@@ -44,6 +46,12 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
   const [otpError, setOtpError] = useState('')
   const [denyInput, setDenyInput] = useState('')
   const [successToast, setSuccessToast] = useState<string | null>(null)
+  const [errorToast, setErrorToast] = useState<string | null>(null)
+  const [confirmResetTotp, setConfirmResetTotp] = useState(false)
+  const showToast = (message: string, type: 'success' | 'error' = 'error') => {
+    if (type === 'success') { setSuccessToast(message); setTimeout(() => setSuccessToast(null), 4000) }
+    else { setErrorToast(message); setTimeout(() => setErrorToast(null), 4000) }
+  }
 
   // TOTP countdown timer
   const [totpSecondsLeft, setTotpSecondsLeft] = useState(30 - (Math.floor(Date.now() / 1000) % 30))
@@ -84,12 +92,14 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
       setSetupModalOpen(true)
     } catch (e: any) {
       if (e?.response?.status === 409) { setTotpEnabled(true); return }
-      alert('Failed to get 2FA setup info')
+      showToast('Failed to get 2FA setup info')
     }
   }
 
-  const handleRelinkTOTP = async () => {
-    if (!confirm('This will remove your current 2FA link. You will need to re-scan with your authenticator app. Continue?')) return
+  const handleRelinkTOTP = () => setConfirmResetTotp(true)
+
+  const doRelinkTOTP = async () => {
+    setConfirmResetTotp(false)
     try {
       await resetTOTP()
       setTotpEnabled(false)
@@ -99,7 +109,7 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
       setOtpInput('')
       setSetupModalOpen(true)
     } catch {
-      alert('Failed to reset 2FA')
+      showToast('Failed to reset 2FA')
     }
   }
 
@@ -109,7 +119,7 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
     if (digits.length === 6) {
       verifyTOTPSetup(digits)
         .then(() => { setTotpEnabled(true); setSetupModalOpen(false) })
-        .catch(() => { alert('Invalid code, try again'); setOtpInput('') })
+        .catch(() => { showToast('Invalid code, try again'); setOtpInput('') })
     }
   }
 
@@ -153,7 +163,7 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
   const submitDeny = async () => {
     if (!denyTarget) return
     try { await denyRequest(denyTarget, denyInput); setDenyModalOpen(false); fetchRequests() }
-    catch { alert('Deny failed') }
+    catch { showToast('Deny failed') }
   }
 
   const openLogs = async (instId: string, instName: string) => {
@@ -169,8 +179,8 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
     if (!reason) return
     try {
       await createRequest({ instanceId: inst.instanceId, instanceName: inst.name, reason, region: inst.region, operation, project: inst.project, accountId: inst.accountId })
-      alert(`${label} request submitted`)
-    } catch (e: any) { alert('Failed: ' + (e?.response?.data?.error || e.message)) }
+      showToast(`${label} request submitted`, 'success')
+    } catch (e: any) { showToast('Failed: ' + (e?.response?.data?.error || e.message)) }
   }
 
   const timerColor = totpSecondsLeft <= 5 ? '#ef5350' : totpSecondsLeft <= 10 ? '#f5a623' : '#50c878'
@@ -233,7 +243,7 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
               <button className="btn-primary" onClick={() => {
                 verifyTOTPSetup(otpInput)
                   .then(() => { setTotpEnabled(true); setSetupModalOpen(false) })
-                  .catch(() => alert('Invalid code'))
+                  .catch(() => showToast('Invalid code'))
               }}>Verify</button>
             </div>
           </div>
@@ -501,6 +511,17 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
       </div>
       {modals}
       {toast}
+      {errorToast && <Toast message={errorToast} type="error" onClose={() => setErrorToast(null)} />}
+      {confirmResetTotp && (
+        <ConfirmDialog
+          title="Reset 2FA"
+          message="This will remove your current 2FA link. You will need to re-scan with your authenticator app. Continue?"
+          confirmLabel="Reset"
+          danger
+          onConfirm={doRelinkTOTP}
+          onCancel={() => setConfirmResetTotp(false)}
+        />
+      )}
     </div>
   )
 }

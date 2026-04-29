@@ -9,6 +9,8 @@ import {
   Navigation24Regular, Cloud24Regular, Add24Regular, Delete24Regular,
   People24Regular, Copy24Regular, Key24Regular,
 } from '@fluentui/react-icons'
+import { ConfirmDialog } from '../components/ConfirmDialog'
+import { Toast } from '../components/Toast'
 
 interface Props {
   onToggleSidebar?: () => void
@@ -43,6 +45,10 @@ export function AccountManagement({ onToggleSidebar }: Props) {
   const [form, setForm] = useState<AccountForm>(emptyForm())
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<AWSAccount | null>(null)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+
+  const showToast = (message: string, type: 'success' | 'error' = 'error') => setToast({ message, type })
 
   const fetchAccounts = async () => {
     setLoading(true)
@@ -76,15 +82,18 @@ export function AccountManagement({ onToggleSidebar }: Props) {
       setAddModalOpen(false)
       await fetchAccounts()
     } catch (e: any) {
-      alert('Failed: ' + (e?.response?.data?.error || e.message))
+      showToast('Failed: ' + (e?.response?.data?.error || e.message))
     }
     setSaving(false)
   }
 
-  const handleDelete = async (acc: AWSAccount) => {
-    if (!confirm(`Remove account "${acc.alias}" (${acc.accountId})?\nUsers will lose access immediately.`)) return
-    try { await deleteAccount(acc.accountId); await fetchAccounts() }
-    catch { alert('Delete failed') }
+  const handleDelete = (acc: AWSAccount) => setConfirmDelete(acc)
+
+  const confirmDeleteAccount = async () => {
+    if (!confirmDelete) return
+    try { await deleteAccount(confirmDelete.accountId); await fetchAccounts(); showToast('Account removed', 'success') }
+    catch { showToast('Delete failed') }
+    setConfirmDelete(null)
   }
 
   const openMembers = async (acc: AWSAccount) => {
@@ -103,7 +112,7 @@ export function AccountManagement({ onToggleSidebar }: Props) {
     try {
       const m = await addAccountMember(selectedAccount.accountId, userId)
       setMembers(prev => [...prev, m])
-    } catch { alert('Failed to add member') }
+    } catch { showToast('Failed to add member') }
   }
 
   const handleRemoveMember = async (userId: string) => {
@@ -111,7 +120,7 @@ export function AccountManagement({ onToggleSidebar }: Props) {
     try {
       await removeAccountMember(selectedAccount.accountId, userId)
       setMembers(prev => prev.filter(m => m.userId !== userId))
-    } catch { alert('Failed to remove member') }
+    } catch { showToast('Failed to remove member') }
   }
 
   const copyToClipboard = (text: string) => {
@@ -319,6 +328,18 @@ export function AccountManagement({ onToggleSidebar }: Props) {
           </div>
         </div>
       )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Remove account"
+          message={`Remove "${confirmDelete.alias}" (${confirmDelete.accountId})?\nUsers will lose access immediately.`}
+          confirmLabel="Remove"
+          danger
+          onConfirm={confirmDeleteAccount}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   )
 }

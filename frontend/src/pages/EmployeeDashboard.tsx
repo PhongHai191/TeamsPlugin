@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { listInstances, listMyRequests, createRequest } from '../lib/api'
 import type { CurrentUser, EC2Instance, OperationType, RestartRequest } from '../types'
+import { Toast } from '../components/Toast'
 import {
   Server24Regular,
   Clipboard24Regular,
@@ -24,6 +25,8 @@ export function EmployeeDashboard({ user, view, onToggleSidebar }: Props) {
   const [ec2Filter, setEc2Filter] = useState('all')
   const [reqFilter, setReqFilter] = useState('all')
   const [loading, setLoading] = useState(false)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const showToast = (message: string, type: 'success' | 'error' = 'error') => setToast({ message, type })
 
   const fetchInstances = async () => {
     setLoading(true)
@@ -66,11 +69,11 @@ export function EmployeeDashboard({ user, view, onToggleSidebar }: Props) {
         project: inst.project,
         accountId: inst.accountId,
       })
-      alert(`${label} request submitted successfully`)
+      showToast(`${label} request submitted successfully`, 'success')
       fetchRequests()
     } catch (e: any) {
       const msg = e?.response?.data?.error || e.message
-      alert(`Failed to submit request: ${msg}`)
+      showToast(`Failed to submit request: ${msg}`)
     }
   }
 
@@ -241,6 +244,7 @@ return (
           </table>
         </div>
       </div>
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   )
 }
