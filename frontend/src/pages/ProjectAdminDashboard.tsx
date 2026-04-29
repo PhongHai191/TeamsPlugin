@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import {
   listMyProjects, listProjectRequests, approveProjectRequestWithOTP,
   denyProjectRequest, listProjectMembers, addProjectMember, removeProjectMember,
-  listUsers, getTOTPSetup, verifyTOTPSetup, resetTOTP, updateProjectMemberRole,
+  listUsers, getTOTPSetup, verifyTOTPSetup, resetTOTP,
 } from '../lib/api'
 import type { CurrentUser, Project, ProjectMember, RestartRequest, User } from '../types'
 import {
