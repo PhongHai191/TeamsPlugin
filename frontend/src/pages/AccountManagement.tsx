@@ -228,10 +228,10 @@ export function AccountManagement({ onToggleSidebar }: Props) {
               <div>
                 <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Key24Regular fontSize={14} /> External ID *
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}>(auto-generated — copy into IAM trust policy)</span>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}>(auto-generated or paste existing)</span>
                 </label>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <input className="txt-input" value={form.externalId} readOnly style={{ fontFamily: 'monospace', fontSize: 13 }} />
+                  <input className="txt-input" value={form.externalId} onChange={e => setForm(f => ({ ...f, externalId: e.target.value }))} style={{ fontFamily: 'monospace', fontSize: 13 }} />
                   <button className="btn-ghost" style={{ whiteSpace: 'nowrap', padding: '6px 12px' }} onClick={() => copyToClipboard(form.externalId)}>
                     <Copy24Regular fontSize={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />
                     {copied ? 'Copied!' : 'Copy'}
