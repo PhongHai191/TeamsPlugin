@@ -205,17 +205,69 @@ func (h *ProjectsHandler) AddMember(c *gin.Context) {
 	c.JSON(http.StatusCreated, m)
 }
 
-// DELETE /api/projects/:id/members/:userId — project admin or global admin removes a member
+// DELETE /api/projects/:id/members/:userId — removes a member with role-based restrictions
 func (h *ProjectsHandler) RemoveMember(c *gin.Context) {
 	projectID := c.Param("id")
-	if err := h.requireProjectAdminOrGlobalAdmin(c, projectID); err != nil {
-		return
+	targetUserID := c.Param("userId")
+	callerID := c.GetString(middleware.ContextKeyUserID)
+	callerRole := c.GetString(middleware.ContextKeyRole)
+
+	isGlobalAdmin := callerRole == string(model.RoleAdmin) || callerRole == string(model.RoleRoot)
+	if !isGlobalAdmin {
+		if err := h.requireProjectAdminOrGlobalAdmin(c, projectID); err != nil {
+			return
+		}
+		if callerID == targetUserID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "cannot remove yourself from the project"})
+			return
+		}
+		target, err := h.db.GetProjectMember(c.Request.Context(), projectID, targetUserID)
+		if err == nil && target != nil && target.Role == "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "only global admin can remove a project admin"})
+			return
+		}
 	}
-	if err := h.db.RemoveProjectMember(c.Request.Context(), projectID, c.Param("userId")); err != nil {
+
+	if err := h.db.RemoveProjectMember(c.Request.Context(), projectID, targetUserID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "removed"})
+}
+
+// PATCH /api/projects/:id/members/:userId — admin/root changes a member's project role
+func (h *ProjectsHandler) UpdateMemberRole(c *gin.Context) {
+	callerRole := c.GetString(middleware.ContextKeyRole)
+	if callerRole != string(model.RoleAdmin) && callerRole != string(model.RoleRoot) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only admin or root can change member roles"})
+		return
+	}
+	projectID := c.Param("id")
+	targetUserID := c.Param("userId")
+
+	var body struct {
+		Role string `json:"role" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if body.Role != "admin" && body.Role != "member" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "role must be admin or member"})
+		return
+	}
+
+	m, err := h.db.GetProjectMember(c.Request.Context(), projectID, targetUserID)
+	if err != nil || m == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "member not found"})
+		return
+	}
+	m.Role = body.Role
+	if err := h.db.AddProjectMember(c.Request.Context(), *m); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, m)
 }
 
 // GET /api/projects/:id/requests — project admin lists requests for their project

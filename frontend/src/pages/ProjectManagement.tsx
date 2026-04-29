@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import {
   listAllProjects, deleteProject, listAccounts, listAccountInstances,
-  listUsers, createProject, listProjectMembers,
+  listUsers, createProject, listProjectMembers, addProjectMember,
+  removeProjectMember, updateProjectMemberRole,
 } from '../lib/api'
 import type { AWSAccount, EC2Instance, Project, ProjectMember, User } from '../types'
 import {
   Navigation24Regular, FolderOpen24Regular, Add24Regular, Delete24Regular,
   People24Regular, Server24Regular, ArrowClockwise20Regular, ArrowLeft24Regular,
-  CheckmarkCircle24Regular,
+  CheckmarkCircle24Regular, ArrowSwap24Regular,
 } from '@fluentui/react-icons'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { Toast } from '../components/Toast'
@@ -134,8 +135,42 @@ export function ProjectManagement({ onToggleSidebar }: Props) {
 
   const openDetail = async (p: Project) => {
     setDetailProject(p)
-    const members = await listProjectMembers(p.projectId).catch(() => [] as ProjectMember[])
+    const [members, users] = await Promise.all([
+      listProjectMembers(p.projectId).catch(() => [] as ProjectMember[]),
+      allUsers.length > 0 ? Promise.resolve(allUsers) : listUsers().catch(() => [] as User[]),
+    ])
     setDetailMembers(members)
+    if (allUsers.length === 0) setAllUsers(users)
+  }
+
+  const handleDetailRemove = async (uid: string) => {
+    if (!detailProject) return
+    try {
+      await removeProjectMember(detailProject.projectId, uid)
+      setDetailMembers(prev => prev.filter(m => m.userId !== uid))
+      setProjects(prev => prev.map(p => p.projectId === detailProject.projectId ? { ...p, memberCount: (p.memberCount ?? 1) - 1 } : p))
+      showToast('Member removed', 'success')
+    } catch (e: any) { showToast(e?.response?.data?.error || 'Failed to remove') }
+  }
+
+  const handleDetailToggleRole = async (m: ProjectMember) => {
+    if (!detailProject) return
+    const newRole = m.role === 'admin' ? 'member' : 'admin'
+    try {
+      const updated = await updateProjectMemberRole(detailProject.projectId, m.userId, newRole)
+      setDetailMembers(prev => prev.map(x => x.userId === m.userId ? { ...x, role: updated.role } : x))
+      showToast(`${m.userName} is now ${newRole}`, 'success')
+    } catch (e: any) { showToast(e?.response?.data?.error || 'Failed to update role') }
+  }
+
+  const handleDetailAddMember = async (uid: string, role: 'admin' | 'member') => {
+    if (!detailProject) return
+    try {
+      const added = await addProjectMember(detailProject.projectId, uid, role)
+      setDetailMembers(prev => [...prev, added])
+      setProjects(prev => prev.map(p => p.projectId === detailProject.projectId ? { ...p, memberCount: (p.memberCount ?? 0) + 1 } : p))
+      showToast(`${added.userName || uid} added as ${role}`, 'success')
+    } catch (e: any) { showToast(e?.response?.data?.error || 'Failed to add member') }
   }
 
   const handleDelete = async () => {
@@ -221,30 +256,75 @@ export function ProjectManagement({ onToggleSidebar }: Props) {
         {/* Members detail modal */}
         {detailProject && (
           <div className="modal">
-            <div className="modal-card" style={{ width: 480 }}>
+            <div className="modal-card" style={{ width: 520 }}>
               <div className="modal-header">
                 <span className="modal-icon"><People24Regular style={{ fontSize: 28 }} /></span>
                 <div><h2>{detailProject.name}</h2><p className="modal-subtitle">{detailMembers.length} members</p></div>
               </div>
-              <div className="modal-body" style={{ maxHeight: 360, overflowY: 'auto' }}>
-                {detailMembers.length === 0
-                  ? <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>No members yet</p>
-                  : detailMembers.map(m => (
-                    <div key={m.userId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border-light)' }}>
-                      <div>
-                        <div style={{ fontWeight: 500, fontSize: 13 }}>{m.userName || m.userId}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                          <span style={{ background: m.role === 'admin' ? 'rgba(123,104,238,0.15)' : 'rgba(80,200,120,0.15)', color: m.role === 'admin' ? '#7b68ee' : '#50c878', borderRadius: 4, padding: '1px 6px', fontSize: 10, fontWeight: 600 }}>
-                            {m.role}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                }
+              <div className="modal-body" style={{ maxHeight: 420, overflowY: 'auto', padding: 0 }}>
+                {/* Current members */}
+                {detailMembers.length > 0 && (
+                  <table className="data-table" style={{ margin: 0 }}>
+                    <thead><tr><th>User</th><th>Role</th><th style={{ width: 80 }}></th></tr></thead>
+                    <tbody>
+                      {detailMembers.map(m => (
+                        <tr key={m.userId} className="instance-row">
+                          <td className="name-cell" style={{ fontSize: 13 }}>{m.userName || m.userId}</td>
+                          <td>
+                            <span style={{ background: m.role === 'admin' ? 'rgba(123,104,238,0.15)' : 'rgba(80,200,120,0.15)', color: m.role === 'admin' ? '#7b68ee' : '#50c878', borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>
+                              {m.role}
+                            </span>
+                          </td>
+                          <td className="action-cell">
+                            <button className="btn-icon-action" title={m.role === 'admin' ? 'Demote to member' : 'Promote to admin'} style={{ color: '#7b68ee' }} onClick={() => handleDetailToggleRole(m)}>
+                              <ArrowSwap24Regular fontSize={15} />
+                            </button>
+                            <button className="btn-icon-action" title="Remove from project" style={{ color: 'var(--status-stopped)' }} onClick={() => handleDetailRemove(m.userId)}>
+                              <Delete24Regular fontSize={15} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {detailMembers.length === 0 && (
+                  <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>No members yet</p>
+                )}
+                {/* Add member section */}
+                {(() => {
+                  const assignedIds = new Set(detailMembers.map(m => m.userId))
+                  const available = allUsers.filter(u => u.role === 'user' && !assignedIds.has(u.teamsUserId))
+                  if (available.length === 0) return null
+                  return (
+                    <>
+                      <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', padding: '12px 16px 4px', borderTop: '1px solid var(--border-light)' }}>Add User</div>
+                      <table className="data-table" style={{ margin: 0 }}>
+                        <tbody>
+                          {available.map(u => (
+                            <tr key={u.teamsUserId} className="instance-row">
+                              <td className="name-cell" style={{ fontSize: 13 }}>
+                                <div>{u.displayName}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{u.email}</div>
+                              </td>
+                              <td className="action-cell">
+                                <button className="btn-action btn-action-success" style={{ fontSize: 12 }} onClick={() => handleDetailAddMember(u.teamsUserId, 'member')}>
+                                  <Add24Regular fontSize={13} style={{ marginRight: 3 }} />Member
+                                </button>
+                                <button className="btn-action" style={{ fontSize: 12, color: '#7b68ee', borderColor: 'rgba(123,104,238,0.3)' }} onClick={() => handleDetailAddMember(u.teamsUserId, 'admin')}>
+                                  <Add24Regular fontSize={13} style={{ marginRight: 3 }} />Admin
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </>
+                  )
+                })()}
               </div>
               <div className="modal-footer">
-                <button className="btn-cancel" onClick={() => setDetailProject(null)}>Close</button>
+                <button className="btn-cancel" onClick={() => { setDetailProject(null); setDetailMembers([]) }}>Close</button>
               </div>
             </div>
           </div>

@@ -82,6 +82,7 @@ func main() {
 		group.GET("/projects", projectsHandler.ListMine)
 		group.GET("/projects/:id/members", projectsHandler.ListMembers)
 		group.POST("/projects/:id/members", projectsHandler.AddMember)
+		group.PATCH("/projects/:id/members/:userId", projectsHandler.UpdateMemberRole)
 		group.DELETE("/projects/:id/members/:userId", projectsHandler.RemoveMember)
 		group.GET("/projects/:id/requests", projectsHandler.ListRequests)
 		group.POST("/projects/:id/requests/approve", projectsHandler.ApproveRequest)

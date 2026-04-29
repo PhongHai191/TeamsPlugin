@@ -162,6 +162,9 @@ export const addProjectMember = (projectId: string, userId: string, role: 'admin
 export const removeProjectMember = (projectId: string, userId: string): Promise<void> =>
   api.delete(`/projects/${projectId}/members/${userId}`).then(r => r.data)
 
+export const updateProjectMemberRole = (projectId: string, userId: string, role: 'admin' | 'member'): Promise<ProjectMember> =>
+  api.patch(`/projects/${projectId}/members/${userId}`, { role }).then(r => r.data)
+
 export const listProjectRequests = (projectId: string, status?: string): Promise<RestartRequest[]> =>
   api.get(`/projects/${projectId}/requests`, { params: status ? { status } : {} }).then(r => r.data || [])
 

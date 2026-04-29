@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import {
   listMyProjects, listProjectRequests, approveProjectRequestWithOTP,
   denyProjectRequest, listProjectMembers, addProjectMember, removeProjectMember,
-  listUsers, getTOTPSetup, verifyTOTPSetup, resetTOTP,
+  listUsers, getTOTPSetup, verifyTOTPSetup, resetTOTP, updateProjectMemberRole,
 } from '../lib/api'
 import type { CurrentUser, Project, ProjectMember, RestartRequest, User } from '../types'
 import {
@@ -186,7 +186,10 @@ export function ProjectAdminDashboard({ user, onToggleSidebar }: Props) {
     try {
       await removeProjectMember(selectedProject.projectId, uid)
       setMembers(prev => prev.filter(m => m.userId !== uid))
-    } catch { showToast('Failed to remove member') }
+      showToast('Member removed', 'success')
+    } catch (e: any) {
+      showToast(e?.response?.data?.error || 'Failed to remove member')
+    }
   }
 
   const timerColor = totpSecondsLeft <= 5 ? '#ef5350' : totpSecondsLeft <= 10 ? '#f5a623' : '#50c878'
@@ -307,21 +310,34 @@ export function ProjectAdminDashboard({ user, onToggleSidebar }: Props) {
                           <table className="data-table">
                             <thead><tr><th>User</th><th>Role</th><th></th></tr></thead>
                             <tbody>
-                              {members.map(m => (
-                                <tr key={m.userId} className="instance-row">
-                                  <td className="name-cell">{m.userName || m.userId}</td>
-                                  <td>
-                                    <span style={{ background: m.role === 'admin' ? 'rgba(123,104,238,0.15)' : 'rgba(80,200,120,0.15)', color: m.role === 'admin' ? '#7b68ee' : '#50c878', borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>
-                                      {m.role}
-                                    </span>
-                                  </td>
-                                  <td>
-                                    <button className="btn-icon-action" style={{ color: 'var(--status-stopped)' }} onClick={() => handleRemoveMember(m.userId)}>
-                                      <Delete24Regular fontSize={16} />
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
+                              {members.map(m => {
+                                const isSelf = m.userId === user.teamsUserId
+                                const cannotRemove = isSelf || m.role === 'admin'
+                                return (
+                                  <tr key={m.userId} className="instance-row">
+                                    <td className="name-cell">
+                                      {m.userName || m.userId}
+                                      {isSelf && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--text-muted)' }}>(you)</span>}
+                                    </td>
+                                    <td>
+                                      <span style={{ background: m.role === 'admin' ? 'rgba(123,104,238,0.15)' : 'rgba(80,200,120,0.15)', color: m.role === 'admin' ? '#7b68ee' : '#50c878', borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>
+                                        {m.role}
+                                      </span>
+                                    </td>
+                                    <td>
+                                      <button
+                                        className="btn-icon-action"
+                                        disabled={cannotRemove}
+                                        title={isSelf ? 'Cannot remove yourself' : m.role === 'admin' ? 'Only global admin can remove a project admin' : 'Remove member'}
+                                        style={{ color: cannotRemove ? 'var(--text-muted)' : 'var(--status-stopped)', cursor: cannotRemove ? 'not-allowed' : 'pointer' }}
+                                        onClick={() => handleRemoveMember(m.userId)}
+                                      >
+                                        <Delete24Regular fontSize={16} />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                )
+                              })}
                             </tbody>
                           </table>
                         </div>
