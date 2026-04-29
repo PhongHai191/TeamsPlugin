@@ -7,6 +7,7 @@ import {
 import type { CurrentUser, EC2Instance, OperationType, RestartRequest } from '../types'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { Toast } from '../components/Toast'
+import { OperationRequestModal } from '../components/OperationRequestModal'
 import { QRCodeSVG } from 'qrcode.react'
 import {
   Server24Regular, Clipboard24Regular, WeatherPartlyCloudyDay24Regular,
@@ -48,6 +49,7 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
   const [successToast, setSuccessToast] = useState<string | null>(null)
   const [errorToast, setErrorToast] = useState<string | null>(null)
   const [confirmResetTotp, setConfirmResetTotp] = useState(false)
+  const [opRequest, setOpRequest] = useState<{ inst: EC2Instance; operation: OperationType } | null>(null)
   const showToast = (message: string, type: 'success' | 'error' = 'error') => {
     if (type === 'success') { setSuccessToast(message); setTimeout(() => setSuccessToast(null), 4000) }
     else { setErrorToast(message); setTimeout(() => setErrorToast(null), 4000) }
@@ -173,10 +175,11 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
     try { setRebootLogs(await getRebootHistory(instId)) } catch { /* ignore */ }
   }
 
-  const handleRequestOperation = async (inst: EC2Instance, operation: OperationType) => {
+  const handleRequestOperation = (inst: EC2Instance, operation: OperationType) => setOpRequest({ inst, operation })
+
+  const submitOperation = async (inst: EC2Instance, operation: OperationType, reason: string) => {
+    setOpRequest(null)
     const label = operation.charAt(0).toUpperCase() + operation.slice(1)
-    const reason = window.prompt(`Submit ${label} request for ${inst.name}?\nReason:`)
-    if (!reason) return
     try {
       await createRequest({ instanceId: inst.instanceId, instanceName: inst.name, reason, region: inst.region, operation, project: inst.project, accountId: inst.accountId })
       showToast(`${label} request submitted`, 'success')
@@ -512,6 +515,14 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
       {modals}
       {toast}
       {errorToast && <Toast message={errorToast} type="error" onClose={() => setErrorToast(null)} />}
+      {opRequest && (
+        <OperationRequestModal
+          inst={opRequest.inst}
+          operation={opRequest.operation}
+          onSubmit={submitOperation}
+          onCancel={() => setOpRequest(null)}
+        />
+      )}
       {confirmResetTotp && (
         <ConfirmDialog
           title="Reset 2FA"

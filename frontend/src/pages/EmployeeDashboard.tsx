@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { listInstances, listMyRequests, createRequest } from '../lib/api'
 import type { CurrentUser, EC2Instance, OperationType, RestartRequest } from '../types'
 import { Toast } from '../components/Toast'
+import { OperationRequestModal } from '../components/OperationRequestModal'
 import {
   Server24Regular,
   Clipboard24Regular,
@@ -27,6 +28,7 @@ export function EmployeeDashboard({ user, view, onToggleSidebar }: Props) {
   const [loading, setLoading] = useState(false)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const showToast = (message: string, type: 'success' | 'error' = 'error') => setToast({ message, type })
+  const [opRequest, setOpRequest] = useState<{ inst: EC2Instance; operation: OperationType } | null>(null)
 
   const fetchInstances = async () => {
     setLoading(true)
@@ -55,25 +57,17 @@ export function EmployeeDashboard({ user, view, onToggleSidebar }: Props) {
     if (view === 'requests') fetchRequests()
   }, [view])
 
-  const handleRequestOperation = async (inst: EC2Instance, operation: OperationType) => {
+  const handleRequestOperation = (inst: EC2Instance, operation: OperationType) => setOpRequest({ inst, operation })
+
+  const submitOperation = async (inst: EC2Instance, operation: OperationType, reason: string) => {
+    setOpRequest(null)
     const label = operation.charAt(0).toUpperCase() + operation.slice(1)
-    const reason = window.prompt(`Submit ${label} request for ${inst.name}?\nReason:`)
-    if (!reason) return
     try {
-      await createRequest({
-        instanceId: inst.instanceId,
-        instanceName: inst.name,
-        reason,
-        region: inst.region,
-        operation,
-        project: inst.project,
-        accountId: inst.accountId,
-      })
+      await createRequest({ instanceId: inst.instanceId, instanceName: inst.name, reason, region: inst.region, operation, project: inst.project, accountId: inst.accountId })
       showToast(`${label} request submitted successfully`, 'success')
       fetchRequests()
     } catch (e: any) {
-      const msg = e?.response?.data?.error || e.message
-      showToast(`Failed to submit request: ${msg}`)
+      showToast(`Failed to submit request: ${e?.response?.data?.error || e.message}`)
     }
   }
 
@@ -245,6 +239,14 @@ return (
         </div>
       </div>
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      {opRequest && (
+        <OperationRequestModal
+          inst={opRequest.inst}
+          operation={opRequest.operation}
+          onSubmit={submitOperation}
+          onCancel={() => setOpRequest(null)}
+        />
+      )}
     </div>
   )
 }
