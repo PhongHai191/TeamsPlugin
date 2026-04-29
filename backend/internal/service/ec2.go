@@ -161,9 +161,13 @@ func (s *EC2Service) RebootInstance(ctx context.Context, instanceID, region stri
 // ── AssumeRole ────────────────────────────────────────────────────────────────
 
 func (s *EC2Service) assumeRole(ctx context.Context, roleARN, externalID, userEmail string) (aws.CredentialsProvider, error) {
+	sessionName := sanitizeSessionName(userEmail)
+	if len(sessionName) < 2 {
+		sessionName = "teams-app-session"
+	}
 	out, err := s.stsClient.AssumeRole(ctx, &sts.AssumeRoleInput{
 		RoleArn:         aws.String(roleARN),
-		RoleSessionName: aws.String(sanitizeSessionName(userEmail)),
+		RoleSessionName: aws.String(sessionName),
 		ExternalId:      aws.String(externalID),
 		DurationSeconds: aws.Int32(900),
 	})
