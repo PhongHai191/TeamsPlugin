@@ -158,6 +158,15 @@ export function EmployeeDashboard({ user, view, onToggleSidebar }: Props) {
             </table>
           </div>
         </div>
+        {opRequest && (
+          <OperationRequestModal
+            inst={opRequest.inst}
+            operation={opRequest.operation}
+            onSubmit={submitOperation}
+            onCancel={() => setOpRequest(null)}
+          />
+        )}
+        {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       </div>
     )
   }

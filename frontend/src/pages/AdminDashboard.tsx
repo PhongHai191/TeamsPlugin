@@ -444,6 +444,15 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
         </div>
         {modals}
         {toast}
+        {opRequest && (
+          <OperationRequestModal
+            inst={opRequest.inst}
+            operation={opRequest.operation}
+            onSubmit={submitOperation}
+            onCancel={() => setOpRequest(null)}
+          />
+        )}
+        {errorToast && <Toast message={errorToast} type="error" onClose={() => setErrorToast(null)} />}
       </div>
     )
   }
