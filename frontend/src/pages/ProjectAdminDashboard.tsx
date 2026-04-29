@@ -245,7 +245,7 @@ export function ProjectAdminDashboard({ user, onToggleSidebar }: Props) {
                     Requests {tab === 'requests' && requests.filter(r => r.status === 'pending').length > 0 && <span className="badge" style={{ marginLeft: 6 }}>{requests.filter(r => r.status === 'pending').length}</span>}
                   </button>
                   <button className={`tab ${tab === 'members' ? 'active' : ''}`} onClick={() => setTab('members')}>
-                    <People24Regular fontSize={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />Members ({members.length})
+                    <People24Regular fontSize={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />Members ({tab === 'members' ? members.length : (selectedProject.memberCount ?? 0)})
                   </button>
                   <button className="btn-ghost" style={{ marginLeft: 'auto', padding: '2px 8px', fontSize: 12 }} onClick={tab === 'requests' ? fetchRequests : fetchMembers} disabled={loading}>
                     <ArrowClockwise20Regular fontSize={14} />

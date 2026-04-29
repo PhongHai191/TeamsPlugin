@@ -154,7 +154,7 @@ export const listAccountInstances = (accountId: string): Promise<EC2Instance[]> 
   api.get(`/admin/accounts/${accountId}/instances`).then(r => r.data || [])
 
 export const listProjectMembers = (projectId: string): Promise<ProjectMember[]> =>
-  api.get(`/admin/projects/${projectId}/members`).then(r => r.data || [])
+  api.get(`/projects/${projectId}/members`).then(r => r.data || [])
 
 export const addProjectMember = (projectId: string, userId: string, role: 'admin' | 'member' = 'member'): Promise<ProjectMember> =>
   api.post(`/projects/${projectId}/members`, { userId, role }).then(r => r.data)

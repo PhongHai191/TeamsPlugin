@@ -80,6 +80,7 @@ func main() {
 
 		// Projects — any user sees their own projects; project admins manage members
 		group.GET("/projects", projectsHandler.ListMine)
+		group.GET("/projects/:id/members", projectsHandler.ListMembers)
 		group.POST("/projects/:id/members", projectsHandler.AddMember)
 		group.DELETE("/projects/:id/members/:userId", projectsHandler.RemoveMember)
 		group.GET("/projects/:id/requests", projectsHandler.ListRequests)
