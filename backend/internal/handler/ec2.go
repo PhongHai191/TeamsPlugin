@@ -55,7 +55,7 @@ func (h *EC2Handler) ListInstances(c *gin.Context) {
 	for _, acc := range accounts {
 		insts, err := h.ec2Svc.ListInstancesForAccount(c.Request.Context(), acc, email)
 		if err != nil {
-			// Log but keep going — one failing account shouldn't block others
+			log.Printf("[EC2] account %s error: %v", acc.AccountID, err)
 			continue
 		}
 		all = append(all, insts...)
