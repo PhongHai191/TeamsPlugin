@@ -45,6 +45,7 @@ func main() {
 	mfaHandler := handler.NewMFAHandler(dbSvc, ec2Svc)
 	blackoutHandler := handler.NewBlackoutHandler(dbSvc)
 	accountsHandler := handler.NewAccountsHandler(dbSvc, ec2Svc)
+	projectsHandler := handler.NewProjectsHandler(dbSvc, ec2Svc)
 
 	r := gin.Default()
 
@@ -72,6 +73,19 @@ func main() {
 		group.GET("/requests/me", reqHandler.ListMyRequests)
 		group.GET("/ec2/instances", ec2Handler.ListInstances)
 
+		// TOTP — accessible to all authenticated users (needed by project admins)
+		group.GET("/totp/setup", totpHandler.Setup)
+		group.POST("/totp/verify-setup", totpHandler.VerifySetup)
+		group.POST("/totp/reset", totpHandler.Reset)
+
+		// Projects — any user sees their own projects; project admins manage members
+		group.GET("/projects", projectsHandler.ListMine)
+		group.POST("/projects/:id/members", projectsHandler.AddMember)
+		group.DELETE("/projects/:id/members/:userId", projectsHandler.RemoveMember)
+		group.GET("/projects/:id/requests", projectsHandler.ListRequests)
+		group.POST("/projects/:id/requests/approve", projectsHandler.ApproveRequest)
+		group.POST("/projects/:id/requests/deny", projectsHandler.DenyRequest)
+
 		admin := group.Group("/admin", adminOnly)
 		{
 			admin.GET("/requests", reqHandler.ListAllRequests)
@@ -79,6 +93,7 @@ func main() {
 			admin.POST("/requests/deny", reqHandler.DenyRequest)
 			admin.GET("/ec2/:instanceId/reboot-history", ec2Handler.GetRebootHistory)
 			admin.GET("/users", usersHandler.ListUsers)
+			// TOTP also kept under /admin for backwards compat
 			admin.GET("/totp/setup", totpHandler.Setup)
 			admin.POST("/totp/verify-setup", totpHandler.VerifySetup)
 			admin.POST("/totp/reset", totpHandler.Reset)
@@ -86,6 +101,12 @@ func main() {
 			admin.GET("/mfa/pending", mfaHandler.GetPending)
 			admin.GET("/mfa/challenge/:id/status", mfaHandler.GetStatus)
 			admin.POST("/mfa/challenge/:id/verify", mfaHandler.Verify)
+			// Projects management (admin creates/deletes/views all)
+			admin.GET("/projects", projectsHandler.ListAll)
+			admin.POST("/projects", projectsHandler.Create)
+			admin.DELETE("/projects/:id", projectsHandler.Delete)
+			admin.GET("/projects/:id/members", projectsHandler.ListMembers)
+			admin.GET("/accounts/:id/instances", projectsHandler.ListAccountInstances)
 		}
 
 		admin.GET("/blackout", blackoutHandler.List)
@@ -100,9 +121,6 @@ func main() {
 			root.GET("/accounts", accountsHandler.List)
 			root.POST("/accounts", accountsHandler.Create)
 			root.DELETE("/accounts/:id", accountsHandler.Delete)
-			root.GET("/accounts/:id/members", accountsHandler.ListMembers)
-			root.POST("/accounts/:id/members", accountsHandler.AddMember)
-			root.DELETE("/accounts/:id/members/:userId", accountsHandler.RemoveMember)
 			root.GET("/accounts/generate-external-id", accountsHandler.GenerateExternalID)
 		}
 	}

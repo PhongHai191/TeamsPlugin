@@ -11,6 +11,7 @@ export interface EC2Instance {
   privateIp?: string
   region: string
   project?: string
+  projectId?: string
   accountId?: string
   accountAlias?: string
 }
@@ -22,6 +23,8 @@ export interface RestartRequest {
   instanceId: string
   instanceName: string
   region?: string
+  accountId?: string
+  projectId?: string
   operation?: OperationType
   reason: string
   status: RequestStatus
@@ -41,13 +44,6 @@ export interface AWSAccount {
   addedAt: string
   addedBy: string
   // externalId intentionally omitted — never returned from API
-}
-
-export interface AccountMember {
-  userId: string
-  accountId: string
-  grantedBy: string
-  grantedAt: string
 }
 
 export interface BlackoutWindow {
@@ -76,4 +72,23 @@ export interface CurrentUser {
   email: string
   role: Role
   totpEnabled?: boolean
+}
+
+export interface Project {
+  projectId: string
+  name: string
+  accountId: string
+  instanceIds: string[]
+  createdAt: string
+  createdBy: string
+  memberCount?: number
+}
+
+export interface ProjectMember {
+  projectId: string
+  userId: string
+  role: 'admin' | 'member'
+  addedAt: string
+  addedBy: string
+  userName: string
 }

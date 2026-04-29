@@ -181,7 +181,7 @@ export function AdminDashboard({ user, view, onToggleSidebar }: Props) {
     setOpRequest(null)
     const label = operation.charAt(0).toUpperCase() + operation.slice(1)
     try {
-      await createRequest({ instanceId: inst.instanceId, instanceName: inst.name, reason, region: inst.region, operation, project: inst.project, accountId: inst.accountId })
+      await createRequest({ instanceId: inst.instanceId, instanceName: inst.name, reason, region: inst.region, operation, project: inst.project, accountId: inst.accountId, projectId: inst.projectId })
       showToast(`${label} request submitted`, 'success')
     } catch (e: any) { showToast('Failed: ' + (e?.response?.data?.error || e.message)) }
   }

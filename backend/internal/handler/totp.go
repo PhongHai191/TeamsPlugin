@@ -23,7 +23,7 @@ func NewTOTPHandler(db *service.DynamoDBService, ec2Svc *service.EC2Service) *TO
 	return &TOTPHandler{db: db, ec2Svc: ec2Svc}
 }
 
-// GET /api/admin/totp/setup
+// GET /api/totp/setup (also mounted at /api/admin/totp/setup for backwards compat)
 // Returns existing QR if secret already exists (not yet enabled), or generates a new one.
 // Once totpEnabled=true, refuses to regenerate to protect the active secret.
 func (h *TOTPHandler) Setup(c *gin.Context) {

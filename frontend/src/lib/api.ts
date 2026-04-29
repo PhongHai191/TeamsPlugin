@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { AccountMember, AWSAccount, BlackoutWindow, EC2Instance, OperationType, RestartRequest, Role, User } from '../types'
+import type { AWSAccount, BlackoutWindow, EC2Instance, OperationType, Project, ProjectMember, RestartRequest, Role, User } from '../types'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api',
@@ -25,18 +25,16 @@ export const createRequest = (payload: {
   operation?: OperationType
   project?: string
   accountId?: string
+  projectId?: string
 }): Promise<RestartRequest> =>
   api.post('/requests', payload).then(r => r.data)
 
 export const listMyRequests = (): Promise<RestartRequest[]> =>
   api.get('/requests/me').then(r => r.data || [])
 
-// Admin
+// Admin — global request queue
 export const listAllRequests = (status?: string): Promise<RestartRequest[]> =>
   api.get('/admin/requests', { params: status ? { status } : {} }).then(r => r.data || [])
-
-export const approveRequest = (requestId: string): Promise<void> =>
-  api.post('/admin/requests/approve', { requestId }).then(r => r.data)
 
 export const denyRequest = (requestId: string, denyReason: string): Promise<void> =>
   api.post('/admin/requests/deny', { requestId, denyReason }).then(r => r.data)
@@ -68,15 +66,15 @@ export const getMFAPending = (): Promise<{
 export const verifyMFAChallenge = (challengeId: string, selectedNumber: number): Promise<void> =>
   api.post(`/admin/mfa/challenge/${challengeId}/verify`, { selectedNumber }).then(r => r.data)
 
-// TOTP
+// TOTP — accessible to all authenticated users (admin + project admin)
 export const getTOTPSetup = (): Promise<{ otpauthUrl: string; secret: string }> =>
-  api.get('/admin/totp/setup').then(r => r.data)
+  api.get('/totp/setup').then(r => r.data)
 
 export const verifyTOTPSetup = (code: string): Promise<void> =>
-  api.post('/admin/totp/verify-setup', { code }).then(r => r.data)
+  api.post('/totp/verify-setup', { code }).then(r => r.data)
 
 export const resetTOTP = (): Promise<void> =>
-  api.post('/admin/totp/reset').then(r => r.data)
+  api.post('/totp/reset').then(r => r.data)
 
 export const approveRequestWithOTP = (requestId: string, totpCode: string): Promise<void> =>
   api.post('/admin/requests/approve', { requestId, totpCode }).then(r => r.data)
@@ -113,7 +111,7 @@ export const deleteBlackoutWindow = (id: string): Promise<void> =>
 export const toggleBlackoutWindow = (id: string, active: boolean): Promise<void> =>
   api.patch(`/root/blackout/${id}/toggle`, null, { params: { active } }).then(r => r.data)
 
-// AWS Accounts
+// AWS Accounts (root only)
 export const listAccounts = (): Promise<AWSAccount[]> =>
   api.get('/root/accounts').then(r => r.data || [])
 
@@ -133,11 +131,42 @@ export const deleteAccount = (id: string): Promise<void> =>
 export const generateExternalId = (): Promise<{ externalId: string }> =>
   api.get('/root/accounts/generate-external-id').then(r => r.data)
 
-export const listAccountMembers = (accountId: string): Promise<AccountMember[]> =>
-  api.get(`/root/accounts/${accountId}/members`).then(r => r.data || [])
+// Projects (admin manages; all users can read their own)
+export const listMyProjects = (): Promise<Project[]> =>
+  api.get('/projects').then(r => r.data || [])
 
-export const addAccountMember = (accountId: string, userId: string): Promise<AccountMember> =>
-  api.post(`/root/accounts/${accountId}/members`, { userId }).then(r => r.data)
+export const listAllProjects = (): Promise<Project[]> =>
+  api.get('/admin/projects').then(r => r.data || [])
 
-export const removeAccountMember = (accountId: string, userId: string): Promise<void> =>
-  api.delete(`/root/accounts/${accountId}/members/${userId}`).then(r => r.data)
+export const createProject = (payload: {
+  name: string
+  accountId: string
+  instanceIds: string[]
+  projectAdmins?: string[]
+  members?: string[]
+}): Promise<Project> =>
+  api.post('/admin/projects', payload).then(r => r.data)
+
+export const deleteProject = (id: string): Promise<void> =>
+  api.delete(`/admin/projects/${id}`).then(r => r.data)
+
+export const listAccountInstances = (accountId: string): Promise<EC2Instance[]> =>
+  api.get(`/admin/accounts/${accountId}/instances`).then(r => r.data || [])
+
+export const listProjectMembers = (projectId: string): Promise<ProjectMember[]> =>
+  api.get(`/admin/projects/${projectId}/members`).then(r => r.data || [])
+
+export const addProjectMember = (projectId: string, userId: string, role: 'admin' | 'member' = 'member'): Promise<ProjectMember> =>
+  api.post(`/projects/${projectId}/members`, { userId, role }).then(r => r.data)
+
+export const removeProjectMember = (projectId: string, userId: string): Promise<void> =>
+  api.delete(`/projects/${projectId}/members/${userId}`).then(r => r.data)
+
+export const listProjectRequests = (projectId: string, status?: string): Promise<RestartRequest[]> =>
+  api.get(`/projects/${projectId}/requests`, { params: status ? { status } : {} }).then(r => r.data || [])
+
+export const approveProjectRequestWithOTP = (projectId: string, requestId: string, totpCode: string): Promise<void> =>
+  api.post(`/projects/${projectId}/requests/approve`, { requestId, totpCode }).then(r => r.data)
+
+export const denyProjectRequest = (projectId: string, requestId: string, denyReason: string): Promise<void> =>
+  api.post(`/projects/${projectId}/requests/deny`, { requestId, denyReason }).then(r => r.data)

@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"log"
 	"net/http"
 	"sort"
 
@@ -21,20 +20,76 @@ func NewEC2Handler(ec2Svc *service.EC2Service, db *service.DynamoDBService) *EC2
 }
 
 // GET /api/ec2/instances
-// If user has account memberships → assume role per account and aggregate.
-// Root/admin with no memberships fall back to hub-account listing.
+// admin/root: all instances from all accounts.
+// user role: instances from their project memberships only.
 func (h *EC2Handler) ListInstances(c *gin.Context) {
-	userID, _ := c.Get(middleware.ContextKeyUserID)
-	userEmail, _ := c.Get(middleware.ContextKeyEmail)
+	role := c.GetString(middleware.ContextKeyRole)
+	userID := c.GetString(middleware.ContextKeyUserID)
+	email := c.GetString(middleware.ContextKeyEmail)
 
-	accounts, err := h.db.ListUserAccounts(c.Request.Context(), userID.(string))
+	if role == string(model.RoleAdmin) || role == string(model.RoleRoot) {
+		h.listInstancesAdmin(c, email)
+		return
+	}
+
+	// User role: aggregate instances from all their projects
+	projects, err := h.db.ListUserProjects(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if len(projects) == 0 {
+		c.JSON(http.StatusOK, []model.EC2Instance{})
+		return
+	}
+
+	// Group allowed instance IDs by accountId, track project info per instanceId
+	type projectInfo struct{ id, name string }
+	byAccount := map[string]map[string]bool{} // accountId → set of instanceIds
+	instanceProj := map[string]projectInfo{}  // instanceId → {projectId, projectName}
+
+	for _, p := range projects {
+		if byAccount[p.AccountID] == nil {
+			byAccount[p.AccountID] = map[string]bool{}
+		}
+		for _, iid := range p.InstanceIDs {
+			byAccount[p.AccountID][iid] = true
+			instanceProj[iid] = projectInfo{id: p.ProjectID, name: p.Name}
+		}
+	}
+
+	var all []model.EC2Instance
+	for accountID, allowedIDs := range byAccount {
+		acc, err := h.db.GetAWSAccount(c.Request.Context(), accountID)
+		if err != nil || acc == nil {
+			continue
+		}
+		insts, err := h.ec2Svc.ListInstancesForAccountFiltered(c.Request.Context(), *acc, email, allowedIDs)
+		if err != nil {
+			continue
+		}
+		for i := range insts {
+			if pi, ok := instanceProj[insts[i].InstanceID]; ok {
+				insts[i].Project = pi.name
+				insts[i].ProjectID = pi.id
+			}
+		}
+		all = append(all, insts...)
+	}
+	if all == nil {
+		all = []model.EC2Instance{}
+	}
+	c.JSON(http.StatusOK, all)
+}
+
+func (h *EC2Handler) listInstancesAdmin(c *gin.Context, email string) {
+	accounts, err := h.db.ListAWSAccounts(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	if len(accounts) == 0 {
-		// No account assignments — use hub account directly
 		instances, err := h.ec2Svc.ListInstances(c.Request.Context())
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -47,16 +102,10 @@ func (h *EC2Handler) ListInstances(c *gin.Context) {
 		return
 	}
 
-	email := ""
-	if e, ok := userEmail.(string); ok {
-		email = e
-	}
-
 	var all []model.EC2Instance
 	for _, acc := range accounts {
 		insts, err := h.ec2Svc.ListInstancesForAccount(c.Request.Context(), acc, email)
 		if err != nil {
-			log.Printf("[EC2] account %s error: %v", acc.AccountID, err)
 			continue
 		}
 		all = append(all, insts...)

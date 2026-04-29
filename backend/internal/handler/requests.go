@@ -62,6 +62,7 @@ func (h *RequestsHandler) CreateRequest(c *gin.Context) {
 		InstanceName: body.InstanceName,
 		Region:       body.Region,
 		AccountID:    body.AccountID,
+		ProjectID:    body.ProjectID,
 		Operation:    op,
 		Reason:       body.Reason,
 	}

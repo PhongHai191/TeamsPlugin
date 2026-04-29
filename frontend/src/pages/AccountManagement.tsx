@@ -1,13 +1,10 @@
 import { useState, useEffect } from 'react'
 import { ArrowClockwise20Regular } from '@fluentui/react-icons'
-import {
-  listAccounts, createAccount, deleteAccount, generateExternalId,
-  listAccountMembers, addAccountMember, removeAccountMember, listUsers,
-} from '../lib/api'
-import type { AWSAccount, AccountMember, User } from '../types'
+import { listAccounts, createAccount, deleteAccount, generateExternalId } from '../lib/api'
+import type { AWSAccount } from '../types'
 import {
   Navigation24Regular, Cloud24Regular, Add24Regular, Delete24Regular,
-  People24Regular, Copy24Regular, Key24Regular,
+  Copy24Regular, Key24Regular,
 } from '@fluentui/react-icons'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { Toast } from '../components/Toast'
@@ -38,10 +35,6 @@ export function AccountManagement({ onToggleSidebar }: Props) {
   const [accounts, setAccounts] = useState<AWSAccount[]>([])
   const [loading, setLoading] = useState(false)
   const [addModalOpen, setAddModalOpen] = useState(false)
-  const [membersModalOpen, setMembersModalOpen] = useState(false)
-  const [selectedAccount, setSelectedAccount] = useState<AWSAccount | null>(null)
-  const [members, setMembers] = useState<AccountMember[]>([])
-  const [allUsers, setAllUsers] = useState<User[]>([])
   const [form, setForm] = useState<AccountForm>(emptyForm())
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -87,8 +80,6 @@ export function AccountManagement({ onToggleSidebar }: Props) {
     setSaving(false)
   }
 
-  const handleDelete = (acc: AWSAccount) => setConfirmDelete(acc)
-
   const confirmDeleteAccount = async () => {
     if (!confirmDelete) return
     try { await deleteAccount(confirmDelete.accountId); await fetchAccounts(); showToast('Account removed', 'success') }
@@ -96,41 +87,11 @@ export function AccountManagement({ onToggleSidebar }: Props) {
     setConfirmDelete(null)
   }
 
-  const openMembers = async (acc: AWSAccount) => {
-    setSelectedAccount(acc)
-    setMembersModalOpen(true)
-    const [m, u] = await Promise.all([
-      listAccountMembers(acc.accountId).catch(() => [] as AccountMember[]),
-      listUsers().catch(() => [] as User[]),
-    ])
-    setMembers(m)
-    setAllUsers(u)
-  }
-
-  const handleAddMember = async (userId: string) => {
-    if (!selectedAccount) return
-    try {
-      const m = await addAccountMember(selectedAccount.accountId, userId)
-      setMembers(prev => [...prev, m])
-    } catch { showToast('Failed to add member') }
-  }
-
-  const handleRemoveMember = async (userId: string) => {
-    if (!selectedAccount) return
-    try {
-      await removeAccountMember(selectedAccount.accountId, userId)
-      setMembers(prev => prev.filter(m => m.userId !== userId))
-    } catch { showToast('Failed to remove member') }
-  }
-
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
-
-  const assignedUserIds = new Set(members.map(m => m.userId))
-  const unassignedUsers = allUsers.filter(u => !assignedUserIds.has(u.teamsUserId))
 
   return (
     <div className="view-section active">
@@ -175,7 +136,7 @@ export function AccountManagement({ onToggleSidebar }: Props) {
                 <th>Account</th>
                 <th>Role ARN</th>
                 <th>Regions</th>
-                <th>Project</th>
+                <th>Project tag</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -192,10 +153,7 @@ export function AccountManagement({ onToggleSidebar }: Props) {
                   <td className="id-cell">{acc.regions?.join(', ')}</td>
                   <td className="id-cell" style={{ color: acc.project ? 'inherit' : 'var(--text-muted)' }}>{acc.project || '—'}</td>
                   <td className="action-cell">
-                    <button className="btn-action" onClick={() => openMembers(acc)} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <People24Regular fontSize={14} /> Members
-                    </button>
-                    <button className="btn-icon-action" title="Delete account" style={{ color: 'var(--status-stopped)' }} onClick={() => handleDelete(acc)}>
+                    <button className="btn-icon-action" title="Delete account" style={{ color: 'var(--status-stopped)' }} onClick={() => setConfirmDelete(acc)}>
                       <Delete24Regular fontSize={16} />
                     </button>
                   </td>
@@ -211,7 +169,6 @@ export function AccountManagement({ onToggleSidebar }: Props) {
         </div>
       </div>
 
-      {/* Add Account Modal */}
       {addModalOpen && (
         <div className="modal">
           <div className="modal-card" style={{ width: 560 }}>
@@ -271,68 +228,10 @@ export function AccountManagement({ onToggleSidebar }: Props) {
         </div>
       )}
 
-      {/* Members Modal */}
-      {membersModalOpen && selectedAccount && (
-        <div className="modal">
-          <div className="modal-card" style={{ width: 520 }}>
-            <div className="modal-header">
-              <span className="modal-icon"><People24Regular style={{ fontSize: 28 }} /></span>
-              <div>
-                <h2>Account Members</h2>
-                <p className="modal-subtitle">{selectedAccount.alias} ({selectedAccount.accountId})</p>
-              </div>
-            </div>
-            <div className="modal-body" style={{ maxHeight: 400, overflowY: 'auto' }}>
-              {members.length > 0 && (
-                <>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Has access</div>
-                  {members.map(m => {
-                    const u = allUsers.find(u => u.teamsUserId === m.userId)
-                    return (
-                      <div key={m.userId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border-light)' }}>
-                        <div>
-                          <div style={{ fontWeight: 500, fontSize: 13 }}>{u?.displayName || m.userId}</div>
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{u?.email}</div>
-                        </div>
-                        <button className="btn-icon-action" style={{ color: 'var(--status-stopped)' }} onClick={() => handleRemoveMember(m.userId)}>
-                          <Delete24Regular fontSize={16} />
-                        </button>
-                      </div>
-                    )
-                  })}
-                </>
-              )}
-              {unassignedUsers.length > 0 && (
-                <>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 16, marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Add user</div>
-                  {unassignedUsers.map(u => (
-                    <div key={u.teamsUserId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border-light)' }}>
-                      <div>
-                        <div style={{ fontWeight: 500, fontSize: 13 }}>{u.displayName}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{u.email} · {u.role}</div>
-                      </div>
-                      <button className="btn-action btn-action-success" style={{ fontSize: 12 }} onClick={() => handleAddMember(u.teamsUserId)}>
-                        <Add24Regular fontSize={13} style={{ marginRight: 3 }} /> Grant
-                      </button>
-                    </div>
-                  ))}
-                </>
-              )}
-              {members.length === 0 && unassignedUsers.length === 0 && (
-                <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>No users available</p>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button className="btn-cancel" onClick={() => setMembersModalOpen(false)}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {confirmDelete && (
         <ConfirmDialog
           title="Remove account"
-          message={`Remove "${confirmDelete.alias}" (${confirmDelete.accountId})?\nUsers will lose access immediately.`}
+          message={`Remove "${confirmDelete.alias}" (${confirmDelete.accountId})?\nThis will not affect existing projects.`}
           confirmLabel="Remove"
           danger
           onConfirm={confirmDeleteAccount}

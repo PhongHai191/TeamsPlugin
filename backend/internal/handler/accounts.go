@@ -65,47 +65,7 @@ func (h *AccountsHandler) Delete(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 
-// GET /api/root/accounts/:id/members
-func (h *AccountsHandler) ListMembers(c *gin.Context) {
-	members, err := h.db.ListAccountMembers(c.Request.Context(), c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, members)
-}
-
-// POST /api/root/accounts/:id/members
-func (h *AccountsHandler) AddMember(c *gin.Context) {
-	var body model.AccountMemberBody
-	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	grantedBy, _ := c.Get(middleware.ContextKeyUserID)
-	m := model.AccountMember{
-		UserID:    body.UserID,
-		AccountID: c.Param("id"),
-		GrantedBy: grantedBy.(string),
-		GrantedAt: time.Now().UTC().Format(time.RFC3339),
-	}
-	if err := h.db.AddAccountMember(c.Request.Context(), m); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusCreated, m)
-}
-
-// DELETE /api/root/accounts/:id/members/:userId
-func (h *AccountsHandler) RemoveMember(c *gin.Context) {
-	if err := h.db.RemoveAccountMember(c.Request.Context(), c.Param("userId"), c.Param("id")); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"message": "removed"})
-}
-
-// POST /api/root/accounts/generate-external-id  — helper to generate a UUID for ExternalId
+// POST /api/root/accounts/generate-external-id — helper to generate a UUID for ExternalId
 func (h *AccountsHandler) GenerateExternalID(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"externalId": uuid.NewString()})
 }

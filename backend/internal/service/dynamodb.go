@@ -16,12 +16,14 @@ import (
 )
 
 const (
-	tableRequests      = "restart-requests"
-	tableUsers         = "users"
-	tableMFAChallenges = "mfa-challenges"
-	tableBlackout      = "blackout-windows"
-	tableAccounts      = "aws-accounts"
-	tableMembers       = "account-members"
+	tableRequests        = "restart-requests"
+	tableUsers           = "users"
+	tableMFAChallenges   = "mfa-challenges"
+	tableBlackout        = "blackout-windows"
+	tableAccounts        = "aws-accounts"
+	tableMembers         = "account-members"
+	tableProjects        = "projects"
+	tableProjectMembers  = "project-members"
 )
 
 type DynamoDBService struct {
@@ -568,49 +570,163 @@ func (s *DynamoDBService) DeleteAWSAccount(ctx context.Context, accountID string
 	return err
 }
 
-// ── Account Members ───────────────────────────────────────────────────────────
 
-func (s *DynamoDBService) AddAccountMember(ctx context.Context, m model.AccountMember) error {
+// ── Projects ──────────────────────────────────────────────────────────────────
+
+func (s *DynamoDBService) CreateProject(ctx context.Context, p model.Project) (*model.Project, error) {
+	p.ProjectID = uuid.NewString()
+	p.CreatedAt = time.Now().UTC().Format(time.RFC3339)
+	item, err := attributevalue.MarshalMap(p)
+	if err != nil {
+		return nil, err
+	}
+	_, err = s.client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(tableProjects),
+		Item:      item,
+	})
+	return &p, err
+}
+
+func (s *DynamoDBService) GetProject(ctx context.Context, projectID string) (*model.Project, error) {
+	out, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: aws.String(tableProjects),
+		Key:       map[string]types.AttributeValue{"projectId": &types.AttributeValueMemberS{Value: projectID}},
+	})
+	if err != nil || out.Item == nil {
+		return nil, err
+	}
+	var p model.Project
+	err = attributevalue.UnmarshalMap(out.Item, &p)
+	return &p, err
+}
+
+func (s *DynamoDBService) ListAllProjects(ctx context.Context) ([]model.Project, error) {
+	out, err := s.client.Scan(ctx, &dynamodb.ScanInput{TableName: aws.String(tableProjects)})
+	if err != nil {
+		return nil, err
+	}
+	var projects []model.Project
+	return projects, attributevalue.UnmarshalListOfMaps(out.Items, &projects)
+}
+
+// DeleteProject removes the project, all its members, and denies pending requests belonging to it.
+func (s *DynamoDBService) DeleteProject(ctx context.Context, projectID string) error {
+	// Deny pending requests for this project
+	reqOut, err := s.client.Scan(ctx, &dynamodb.ScanInput{
+		TableName:        aws.String(tableRequests),
+		FilterExpression: aws.String("projectId = :pid AND #s = :pending"),
+		ExpressionAttributeNames: map[string]string{"#s": "status"},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pid":     &types.AttributeValueMemberS{Value: projectID},
+			":pending": &types.AttributeValueMemberS{Value: string(model.StatusPending)},
+		},
+	})
+	if err == nil {
+		now := time.Now().UTC().Format(time.RFC3339)
+		for _, item := range reqOut.Items {
+			var req model.RestartRequest
+			if attributevalue.UnmarshalMap(item, &req) == nil {
+				s.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+					TableName: aws.String(tableRequests),
+					Key:       map[string]types.AttributeValue{"requestId": &types.AttributeValueMemberS{Value: req.RequestID}},
+					UpdateExpression: aws.String("SET #s = :denied, denyReason = :dr, updatedAt = :now"),
+					ExpressionAttributeNames: map[string]string{"#s": "status"},
+					ExpressionAttributeValues: map[string]types.AttributeValue{
+						":denied": &types.AttributeValueMemberS{Value: string(model.StatusDenied)},
+						":dr":     &types.AttributeValueMemberS{Value: "Project deleted"},
+						":now":    &types.AttributeValueMemberS{Value: now},
+					},
+				})
+			}
+		}
+	}
+
+	// Remove all project members
+	members, err := s.ListProjectMembers(ctx, projectID)
+	if err == nil {
+		for _, m := range members {
+			s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+				TableName: aws.String(tableProjectMembers),
+				Key: map[string]types.AttributeValue{
+					"projectId": &types.AttributeValueMemberS{Value: projectID},
+					"userId":    &types.AttributeValueMemberS{Value: m.UserID},
+				},
+			})
+		}
+	}
+
+	_, err = s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+		TableName: aws.String(tableProjects),
+		Key:       map[string]types.AttributeValue{"projectId": &types.AttributeValueMemberS{Value: projectID}},
+	})
+	return err
+}
+
+// ── Project Members ───────────────────────────────────────────────────────────
+
+func (s *DynamoDBService) AddProjectMember(ctx context.Context, m model.ProjectMember) error {
+	if m.Role == "" {
+		m.Role = "member"
+	}
+	m.AddedAt = time.Now().UTC().Format(time.RFC3339)
 	item, err := attributevalue.MarshalMap(m)
 	if err != nil {
 		return err
 	}
-	_, err = s.client.PutItem(ctx, &dynamodb.PutItemInput{TableName: aws.String(tableMembers), Item: item})
+	_, err = s.client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(tableProjectMembers),
+		Item:      item,
+	})
 	return err
 }
 
-func (s *DynamoDBService) RemoveAccountMember(ctx context.Context, userID, accountID string) error {
+func (s *DynamoDBService) RemoveProjectMember(ctx context.Context, projectID, userID string) error {
 	_, err := s.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
-		TableName: aws.String(tableMembers),
+		TableName: aws.String(tableProjectMembers),
 		Key: map[string]types.AttributeValue{
+			"projectId": &types.AttributeValueMemberS{Value: projectID},
 			"userId":    &types.AttributeValueMemberS{Value: userID},
-			"accountId": &types.AttributeValueMemberS{Value: accountID},
 		},
 	})
 	return err
 }
 
-// ListAccountMembers returns all users assigned to an account.
-func (s *DynamoDBService) ListAccountMembers(ctx context.Context, accountID string) ([]model.AccountMember, error) {
+func (s *DynamoDBService) ListProjectMembers(ctx context.Context, projectID string) ([]model.ProjectMember, error) {
 	out, err := s.client.Query(ctx, &dynamodb.QueryInput{
-		TableName:              aws.String(tableMembers),
-		IndexName:              aws.String("accountId-index"),
-		KeyConditionExpression: aws.String("accountId = :aid"),
+		TableName:              aws.String(tableProjectMembers),
+		KeyConditionExpression: aws.String("projectId = :pid"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":aid": &types.AttributeValueMemberS{Value: accountID},
+			":pid": &types.AttributeValueMemberS{Value: projectID},
 		},
 	})
 	if err != nil {
 		return nil, err
 	}
-	var members []model.AccountMember
+	var members []model.ProjectMember
 	return members, attributevalue.UnmarshalListOfMaps(out.Items, &members)
 }
 
-// ListUserAccounts returns all accounts a user has access to.
-func (s *DynamoDBService) ListUserAccounts(ctx context.Context, userID string) ([]model.AWSAccount, error) {
+func (s *DynamoDBService) GetProjectMember(ctx context.Context, projectID, userID string) (*model.ProjectMember, error) {
+	out, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: aws.String(tableProjectMembers),
+		Key: map[string]types.AttributeValue{
+			"projectId": &types.AttributeValueMemberS{Value: projectID},
+			"userId":    &types.AttributeValueMemberS{Value: userID},
+		},
+	})
+	if err != nil || out.Item == nil {
+		return nil, err
+	}
+	var m model.ProjectMember
+	err = attributevalue.UnmarshalMap(out.Item, &m)
+	return &m, err
+}
+
+// ListUserProjects returns all projects a user is a member of (any role).
+func (s *DynamoDBService) ListUserProjects(ctx context.Context, userID string) ([]model.Project, error) {
 	out, err := s.client.Query(ctx, &dynamodb.QueryInput{
-		TableName:              aws.String(tableMembers),
+		TableName:              aws.String(tableProjectMembers),
+		IndexName:              aws.String("userId-index"),
 		KeyConditionExpression: aws.String("userId = :uid"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":uid": &types.AttributeValueMemberS{Value: userID},
@@ -619,17 +735,45 @@ func (s *DynamoDBService) ListUserAccounts(ctx context.Context, userID string) (
 	if err != nil {
 		return nil, err
 	}
-	var members []model.AccountMember
-	if err := attributevalue.UnmarshalListOfMaps(out.Items, &members); err != nil {
+	var memberships []model.ProjectMember
+	if err := attributevalue.UnmarshalListOfMaps(out.Items, &memberships); err != nil {
 		return nil, err
 	}
-	var accounts []model.AWSAccount
-	for _, m := range members {
-		acc, err := s.GetAWSAccount(ctx, m.AccountID)
-		if err != nil || acc == nil {
+	var projects []model.Project
+	for _, m := range memberships {
+		p, err := s.GetProject(ctx, m.ProjectID)
+		if err != nil || p == nil {
 			continue
 		}
-		accounts = append(accounts, *acc)
+		projects = append(projects, *p)
 	}
-	return accounts, nil
+	return projects, nil
+}
+
+// ListRequestsByProject returns all requests belonging to a project.
+func (s *DynamoDBService) ListRequestsByProject(ctx context.Context, projectID, statusFilter string) ([]model.RestartRequest, error) {
+	input := &dynamodb.ScanInput{
+		TableName:        aws.String(tableRequests),
+		FilterExpression: aws.String("projectId = :pid"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pid": &types.AttributeValueMemberS{Value: projectID},
+		},
+	}
+	if statusFilter != "" {
+		input.FilterExpression = aws.String("projectId = :pid AND #s = :status")
+		input.ExpressionAttributeNames = map[string]string{"#s": "status"}
+		input.ExpressionAttributeValues[":status"] = &types.AttributeValueMemberS{Value: statusFilter}
+	}
+	out, err := s.client.Scan(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	var requests []model.RestartRequest
+	if err := attributevalue.UnmarshalListOfMaps(out.Items, &requests); err != nil {
+		return nil, err
+	}
+	sort.Slice(requests, func(i, j int) bool {
+		return requests[i].CreatedAt.After(requests[j].CreatedAt)
+	})
+	return requests, nil
 }

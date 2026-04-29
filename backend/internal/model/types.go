@@ -110,6 +110,7 @@ type RestartRequest struct {
 	InstanceName   string        `dynamodbav:"instanceName"             json:"instanceName"`
 	Region         string        `dynamodbav:"region,omitempty"         json:"region,omitempty"`
 	AccountID      string        `dynamodbav:"accountId,omitempty"      json:"accountId,omitempty"`
+	ProjectID      string        `dynamodbav:"projectId,omitempty"      json:"projectId,omitempty"`
 	Operation      OperationType `dynamodbav:"operation"                json:"operation"`
 	Reason         string        `dynamodbav:"reason"                   json:"reason"`
 	Status         Status        `dynamodbav:"status"                   json:"status"`
@@ -129,6 +130,7 @@ type EC2Instance struct {
 	PrivateIP    string `json:"privateIp,omitempty"`
 	Region       string `json:"region"`
 	Project      string `json:"project,omitempty"`
+	ProjectID    string `json:"projectId,omitempty"`
 	AccountID    string `json:"accountId,omitempty"`
 	AccountAlias string `json:"accountAlias,omitempty"`
 }
@@ -153,18 +155,42 @@ type AWSAccountBody struct {
 	Project    string   `json:"project"`
 }
 
-type AccountMember struct {
+// ── Projects ──────────────────────────────────────────────────────────────────
+
+type Project struct {
+	ProjectID   string   `dynamodbav:"projectId"   json:"projectId"`
+	Name        string   `dynamodbav:"name"        json:"name"`
+	AccountID   string   `dynamodbav:"accountId"   json:"accountId"`
+	InstanceIDs []string `dynamodbav:"instanceIds" json:"instanceIds"`
+	CreatedAt   string   `dynamodbav:"createdAt"   json:"createdAt"`
+	CreatedBy   string   `dynamodbav:"createdBy"   json:"createdBy"`
+	MemberCount int      `dynamodbav:"-"           json:"memberCount,omitempty"`
+}
+
+type ProjectMember struct {
+	ProjectID string `dynamodbav:"projectId" json:"projectId"`
 	UserID    string `dynamodbav:"userId"    json:"userId"`
-	AccountID string `dynamodbav:"accountId" json:"accountId"`
-	GrantedBy string `dynamodbav:"grantedBy" json:"grantedBy"`
-	GrantedAt string `dynamodbav:"grantedAt" json:"grantedAt"`
+	Role      string `dynamodbav:"role"      json:"role"` // "admin" | "member"
+	AddedAt   string `dynamodbav:"addedAt"   json:"addedAt"`
+	AddedBy   string `dynamodbav:"addedBy"   json:"addedBy"`
+	UserName  string `dynamodbav:"userName"  json:"userName"`
 }
 
-type AccountMemberBody struct {
+type CreateProjectBody struct {
+	Name          string   `json:"name"          binding:"required"`
+	AccountID     string   `json:"accountId"     binding:"required"`
+	InstanceIDs   []string `json:"instanceIds"`
+	ProjectAdmins []string `json:"projectAdmins"`
+	Members       []string `json:"members"`
+}
+
+type AddProjectMemberBody struct {
 	UserID string `json:"userId" binding:"required"`
+	Role   string `json:"role"` // "admin" | "member", defaults to "member"
 }
 
-// Request/response DTOs
+// ── Request/response DTOs ─────────────────────────────────────────────────────
+
 type CreateRequestBody struct {
 	InstanceID   string        `json:"instanceId"   binding:"required"`
 	InstanceName string        `json:"instanceName" binding:"required"`
@@ -173,6 +199,7 @@ type CreateRequestBody struct {
 	AccountID    string        `json:"accountId"`
 	Operation    OperationType `json:"operation"`
 	Project      string        `json:"project"`
+	ProjectID    string        `json:"projectId"`
 }
 
 type ApproveRequestBody struct {
