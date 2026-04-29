@@ -7,8 +7,7 @@ import { BlackoutWindows } from './pages/BlackoutWindows'
 import { AccountManagement } from './pages/AccountManagement'
 import { ProjectManagement } from './pages/ProjectManagement'
 import { ProjectAdminDashboard } from './pages/ProjectAdminDashboard'
-import { listAllRequests, listMyProjects } from './lib/api'
-import type { Project } from './types'
+import { listAllRequests } from './lib/api'
 import {
   Server24Regular,
   Clipboard24Regular,
@@ -33,7 +32,6 @@ export default function App() {
   const [currentView, setCurrentView] = useState<View>('ec2')
   const [pendingCount, setPendingCount] = useState(0)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
-  const [myAdminProjects, setMyAdminProjects] = useState<Project[]>([])
 
   const isPrivileged = user?.role === 'admin' || user?.role === 'root'
   const isUser = user?.role === 'user'
@@ -51,13 +49,7 @@ export default function App() {
     return () => clearInterval(timer)
   }, [isPrivileged])
 
-  // Check if user role is user and is a project admin in any project
-  useEffect(() => {
-    if (!isUser) return
-    listMyProjects().then(ps => setMyAdminProjects(ps)).catch(() => {})
-  }, [isUser])
-
-  const isProjectAdmin = isUser && myAdminProjects.length > 0
+  const isProjectAdmin = isUser
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen)
   const closeSidebar = () => setIsSidebarOpen(false)
