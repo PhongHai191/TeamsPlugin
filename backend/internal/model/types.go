@@ -149,8 +149,8 @@ type AWSAccount struct {
 type AWSAccountBody struct {
 	AccountID  string   `json:"accountId"  binding:"required"`
 	Alias      string   `json:"alias"      binding:"required"`
-	RoleARN    string   `json:"roleArn"    binding:"required"`
-	ExternalID string   `json:"externalId" binding:"required"`
+	RoleARN    string   `json:"roleArn"`    // empty = use hub credentials (no AssumeRole)
+	ExternalID string   `json:"externalId"` // only needed when RoleARN is set
 	Regions    []string `json:"regions"    binding:"required"`
 	Project    string   `json:"project"`
 }

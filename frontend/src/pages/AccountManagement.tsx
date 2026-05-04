@@ -188,25 +188,30 @@ export function AccountManagement({ onToggleSidebar }: Props) {
                 </div>
               </div>
               <div>
-                <label className="input-label">Role ARN *</label>
+                <label className="input-label">
+                  Role ARN
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400, marginLeft: 6 }}>(để trống nếu đây là hub account)</span>
+                </label>
                 <input className="txt-input" value={form.roleArn} onChange={e => setForm(f => ({ ...f, roleArn: e.target.value }))} placeholder="arn:aws:iam::123456789012:role/TeamAWSExtension-ExecutionRole" />
               </div>
-              <div>
-                <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Key24Regular fontSize={14} /> External ID *
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}>(auto-generated or paste existing)</span>
-                </label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input className="txt-input" value={form.externalId} onChange={e => setForm(f => ({ ...f, externalId: e.target.value }))} style={{ fontFamily: 'monospace', fontSize: 13 }} />
-                  <button className="btn-ghost" style={{ whiteSpace: 'nowrap', padding: '6px 12px' }} onClick={() => copyToClipboard(form.externalId)}>
-                    <Copy24Regular fontSize={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />
-                    {copied ? 'Copied!' : 'Copy'}
-                  </button>
+              {form.roleArn && (
+                <div>
+                  <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Key24Regular fontSize={14} /> External ID
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}>(auto-generated)</span>
+                  </label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input className="txt-input" value={form.externalId} onChange={e => setForm(f => ({ ...f, externalId: e.target.value }))} style={{ fontFamily: 'monospace', fontSize: 13 }} />
+                    <button className="btn-ghost" style={{ whiteSpace: 'nowrap', padding: '6px 12px' }} onClick={() => copyToClipboard(form.externalId)}>
+                      <Copy24Regular fontSize={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+                      {copied ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    Paste this UUID into the <code>sts:ExternalId</code> condition of the IAM trust policy in the target account.
+                  </div>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                  Paste this UUID into the <code>sts:ExternalId</code> condition of the IAM trust policy in the target account.
-                </div>
-              </div>
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
                   <label className="input-label">Regions * (comma-separated)</label>
@@ -220,7 +225,7 @@ export function AccountManagement({ onToggleSidebar }: Props) {
             </div>
             <div className="modal-footer">
               <button className="btn-cancel" onClick={() => setAddModalOpen(false)}>Cancel</button>
-              <button className="btn-primary" disabled={saving || !form.accountId || !form.alias || !form.roleArn || !form.externalId} onClick={handleSave}>
+              <button className="btn-primary" disabled={saving || !form.accountId || !form.alias} onClick={handleSave}>
                 {saving ? 'Saving...' : 'Add Account'}
               </button>
             </div>

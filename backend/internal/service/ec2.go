@@ -64,6 +64,26 @@ func (s *EC2Service) ListInstancesForAccountFiltered(ctx context.Context, accoun
 }
 
 func (s *EC2Service) listInstancesForAccountFiltered(ctx context.Context, account model.AWSAccount, userEmail string, allowedIDs map[string]bool) ([]model.EC2Instance, error) {
+	// Hub account: RoleARN empty — use native credentials directly
+	if account.RoleARN == "" {
+		var all []model.EC2Instance
+		for _, region := range account.Regions {
+			client, ok := s.clients[region]
+			if !ok {
+				cfg := s.baseCfg.Copy()
+				cfg.Region = region
+				client = ec2.NewFromConfig(cfg)
+			}
+			insts, err := s.listForRegion(ctx, client, region, account.AccountID, account.Alias, allowedIDs)
+			if err != nil {
+				log.Printf("[EC2] hub account %s region %s list error: %v", account.AccountID, region, err)
+				continue
+			}
+			all = append(all, insts...)
+		}
+		return all, nil
+	}
+
 	creds, err := s.assumeRole(ctx, account.RoleARN, account.ExternalID, userEmail)
 	if err != nil {
 		return nil, fmt.Errorf("account %s: %w", account.AccountID, err)

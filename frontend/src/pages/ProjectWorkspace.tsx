@@ -122,7 +122,14 @@ export function ProjectWorkspace({ project, user, onToggleSidebar }: Props) {
     setLoading(true)
     try {
       const all = await listInstances()
-      setInstances(all.filter(i => i.projectId === project.projectId))
+      if (isGlobalPrivileged) {
+        // admin/root: backend doesn't set projectId — match by project's instanceIds list
+        const allowed = new Set(project.instanceIds)
+        setInstances(all.filter(i => allowed.has(i.instanceId)))
+      } else {
+        // user role: backend sets projectId correctly
+        setInstances(all.filter(i => i.projectId === project.projectId))
+      }
     } catch { /* ignore */ }
     setLoading(false)
   }
