@@ -941,3 +941,118 @@ body {
   from { transform: translateX(120%) scale(0.9); opacity: 0; }
   to { transform: translateX(0) scale(1); opacity: 1; }
 }
+
+/* --- PROJECT TREE (sidebar) --- */
+.nav-section-header {
+  padding: 12px 12px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tree-item {
+  display: flex;
+  align-items: center;
+  padding: 7px 12px 7px 20px;
+  gap: 8px;
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  position: relative;
+  transition: all 0.15s;
+  user-select: none;
+}
+
+.tree-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.tree-item.active {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.tree-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  background: var(--accent);
+  border-radius: 4px;
+}
+
+/* --- PROJECT TABS (browser-style in top-nav) --- */
+.project-tabs {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  gap: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.project-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 18px;
+  background: none;
+  border: none;
+  border-right: 1px solid var(--border-light);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  position: relative;
+  white-space: nowrap;
+  transition: color 0.15s, background 0.15s;
+  height: 100%;
+  font-family: var(--font-family);
+}
+
+.project-tab:first-child {
+  border-left: 1px solid var(--border-light);
+}
+
+.project-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.project-tab.active {
+  color: var(--text-primary);
+  background: var(--bg-app);
+}
+
+.project-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+}
+
+.tab-badge {
+  background: var(--status-pending);
+  color: #000;
+  border-radius: 8px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  min-width: 16px;
+  text-align: center;
+  display: inline-block;
+}

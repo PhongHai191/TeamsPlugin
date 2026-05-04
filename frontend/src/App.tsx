@@ -1,25 +1,23 @@
 import { useEffect, useState } from 'react'
 import { useTeamsAuth } from './hooks/useTeamsAuth'
-import { AdminDashboard } from './pages/AdminDashboard'
-import { EmployeeDashboard } from './pages/EmployeeDashboard'
 import { UserManagement } from './pages/UserManagement'
 import { BlackoutWindows } from './pages/BlackoutWindows'
 import { AccountManagement } from './pages/AccountManagement'
 import { ProjectManagement } from './pages/ProjectManagement'
-import { ProjectAdminDashboard } from './pages/ProjectAdminDashboard'
-import { listAllRequests } from './lib/api'
+import { ProjectWorkspace } from './pages/ProjectWorkspace'
+import { listMyProjects, listAllRequests } from './lib/api'
+import type { Project } from './types'
 import {
-  Server24Regular,
-  Clipboard24Regular,
   People24Regular,
   Clock24Regular,
   Cloud24Regular,
   FolderOpen24Regular,
   ShieldCheckmark24Filled,
-  Dismiss24Regular
+  Dismiss24Regular,
+  FolderAdd24Regular,
 } from '@fluentui/react-icons'
 
-export type View = 'ec2' | 'requests' | 'users' | 'blackout' | 'accounts' | 'projects' | 'my-projects'
+type GlobalView = 'users' | 'projects' | 'accounts' | 'blackout'
 
 const ROLE_COLORS: Record<string, string> = {
   root: '#f5a623',
@@ -29,29 +27,54 @@ const ROLE_COLORS: Record<string, string> = {
 
 export default function App() {
   const { user, loading, error, isDevMode, setDevRole } = useTeamsAuth()
-  const [currentView, setCurrentView] = useState<View>('ec2')
-  const [pendingCount, setPendingCount] = useState(0)
+  const [projects, setProjects] = useState<Project[]>([])
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+  const [globalView, setGlobalView] = useState<GlobalView | null>(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [pendingCount, setPendingCount] = useState(0)
 
   const isPrivileged = user?.role === 'admin' || user?.role === 'root'
-  const isUser = user?.role === 'user'
 
+  // Fetch projects once user is loaded
+  useEffect(() => {
+    if (!user) return
+    listMyProjects().then(ps => {
+      setProjects(ps)
+      if (ps.length > 0) {
+        setSelectedProjectId(ps[0].projectId)
+      }
+    }).catch(() => {})
+  }, [user])
+
+  // Pending badge count for admin/root
   useEffect(() => {
     if (!isPrivileged) return
-    const fetchPending = async () => {
+    const fetch = async () => {
       try {
         const reqs = await listAllRequests('pending')
         setPendingCount(reqs.length)
       } catch { /* ignore */ }
     }
-    fetchPending()
-    const timer = setInterval(fetchPending, 30000)
-    return () => clearInterval(timer)
+    fetch()
+    const t = setInterval(fetch, 30000)
+    return () => clearInterval(t)
   }, [isPrivileged])
 
-  const isProjectAdmin = isUser
+  const selectedProject = projects.find(p => p.projectId === selectedProjectId) ?? null
 
-  const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen)
+  const selectProject = (id: string) => {
+    setSelectedProjectId(id)
+    setGlobalView(null)
+    setIsSidebarOpen(false)
+  }
+
+  const selectGlobalView = (view: GlobalView) => {
+    setGlobalView(view)
+    setSelectedProjectId(null)
+    setIsSidebarOpen(false)
+  }
+
+  const toggleSidebar = () => setIsSidebarOpen(s => !s)
   const closeSidebar = () => setIsSidebarOpen(false)
 
   if (loading) return <div style={{ padding: '40px', color: '#a0a0a0', textAlign: 'center' }}>Loading Teams App...</div>
@@ -92,64 +115,62 @@ export default function App() {
         )}
 
         <nav className="sidebar-nav">
-          <a className={`nav-item ${currentView === 'ec2' ? 'active' : ''}`} href="#"
-            onClick={(e) => { e.preventDefault(); setCurrentView('ec2'); closeSidebar() }}>
-            <div className="nav-indicator"></div>
-            <span className="nav-icon"><Server24Regular /></span>
-            <span className="nav-text">EC2 Servers</span>
-          </a>
+          {/* Projects section */}
+          <div className="nav-section-header">
+            <span>My Projects</span>
+            {pendingCount > 0 && <span className="badge">{pendingCount}</span>}
+          </div>
 
-          <a className={`nav-item ${currentView === 'requests' ? 'active' : ''}`} href="#"
-            onClick={(e) => { e.preventDefault(); setCurrentView('requests'); closeSidebar() }}>
-            <div className="nav-indicator"></div>
-            <span className="nav-icon"><Clipboard24Regular /></span>
-            <span className="nav-text">{isPrivileged ? 'Requests Queue' : 'My Requests'}</span>
-            {isPrivileged && pendingCount > 0 && <span className="badge">{pendingCount}</span>}
-          </a>
-
-          {/* Project admin nav (for users who are project admins) */}
-          {isProjectAdmin && (
-            <>
-              <div className="nav-divider"></div>
-              <a className={`nav-item ${currentView === 'my-projects' ? 'active' : ''}`} href="#"
-                onClick={(e) => { e.preventDefault(); setCurrentView('my-projects'); closeSidebar() }}>
-                <div className="nav-indicator"></div>
-                <span className="nav-icon"><FolderOpen24Regular /></span>
-                <span className="nav-text">My Projects</span>
-              </a>
-            </>
+          {projects.length === 0 ? (
+            <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+              No projects available
+            </div>
+          ) : (
+            projects.map(p => (
+              <div
+                key={p.projectId}
+                className={`tree-item ${selectedProjectId === p.projectId ? 'active' : ''}`}
+                onClick={() => selectProject(p.projectId)}
+              >
+                <FolderOpen24Regular style={{ fontSize: 14, flexShrink: 0, opacity: 0.7 }} />
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {p.name}
+                </span>
+              </div>
+            ))
           )}
 
+          {/* Admin / Root global tools */}
           {isPrivileged && (
             <>
-              <div className="nav-divider"></div>
-              <a className={`nav-item ${currentView === 'users' ? 'active' : ''}`} href="#"
-                onClick={(e) => { e.preventDefault(); setCurrentView('users'); closeSidebar() }}>
-                <div className="nav-indicator"></div>
+              <div className="nav-divider" />
+              <a className={`nav-item ${globalView === 'users' ? 'active' : ''}`} href="#"
+                onClick={e => { e.preventDefault(); selectGlobalView('users') }}>
+                <div className="nav-indicator" />
                 <span className="nav-icon"><People24Regular /></span>
                 <span className="nav-text">User Management</span>
               </a>
-              <a className={`nav-item ${currentView === 'projects' ? 'active' : ''}`} href="#"
-                onClick={(e) => { e.preventDefault(); setCurrentView('projects'); closeSidebar() }}>
-                <div className="nav-indicator"></div>
-                <span className="nav-icon"><FolderOpen24Regular /></span>
-                <span className="nav-text">Projects</span>
+              <a className={`nav-item ${globalView === 'projects' ? 'active' : ''}`} href="#"
+                onClick={e => { e.preventDefault(); selectGlobalView('projects') }}>
+                <div className="nav-indicator" />
+                <span className="nav-icon"><FolderAdd24Regular /></span>
+                <span className="nav-text">Manage Projects</span>
               </a>
             </>
           )}
 
-          {user?.role === 'root' && (
+          {user.role === 'root' && (
             <>
-              <div className="nav-divider"></div>
-              <a className={`nav-item ${currentView === 'accounts' ? 'active' : ''}`} href="#"
-                onClick={(e) => { e.preventDefault(); setCurrentView('accounts'); closeSidebar() }}>
-                <div className="nav-indicator"></div>
+              <div className="nav-divider" />
+              <a className={`nav-item ${globalView === 'accounts' ? 'active' : ''}`} href="#"
+                onClick={e => { e.preventDefault(); selectGlobalView('accounts') }}>
+                <div className="nav-indicator" />
                 <span className="nav-icon"><Cloud24Regular /></span>
                 <span className="nav-text">AWS Accounts</span>
               </a>
-              <a className={`nav-item ${currentView === 'blackout' ? 'active' : ''}`} href="#"
-                onClick={(e) => { e.preventDefault(); setCurrentView('blackout'); closeSidebar() }}>
-                <div className="nav-indicator"></div>
+              <a className={`nav-item ${globalView === 'blackout' ? 'active' : ''}`} href="#"
+                onClick={e => { e.preventDefault(); selectGlobalView('blackout') }}>
+                <div className="nav-indicator" />
                 <span className="nav-icon"><Clock24Regular /></span>
                 <span className="nav-text">Blackout Windows</span>
               </a>
@@ -159,20 +180,26 @@ export default function App() {
       </aside>
 
       <main className="main-content">
-        {isPrivileged ? (
-          <>
-            {(currentView === 'ec2' || currentView === 'requests') && <AdminDashboard user={user} view={currentView} onToggleSidebar={toggleSidebar} />}
-            {currentView === 'users' && <UserManagement callerRole={user.role} onToggleSidebar={toggleSidebar} />}
-            {currentView === 'projects' && <ProjectManagement onToggleSidebar={toggleSidebar} />}
-            {currentView === 'accounts' && user.role === 'root' && <AccountManagement onToggleSidebar={toggleSidebar} />}
-            {currentView === 'blackout' && user.role === 'root' && <BlackoutWindows onToggleSidebar={toggleSidebar} />}
-          </>
+        {selectedProject ? (
+          <ProjectWorkspace
+            key={selectedProject.projectId}
+            project={selectedProject}
+            user={user}
+            onToggleSidebar={toggleSidebar}
+          />
+        ) : globalView === 'users' ? (
+          <UserManagement callerRole={user.role} onToggleSidebar={toggleSidebar} />
+        ) : globalView === 'projects' ? (
+          <ProjectManagement onToggleSidebar={toggleSidebar} />
+        ) : globalView === 'accounts' && user.role === 'root' ? (
+          <AccountManagement onToggleSidebar={toggleSidebar} />
+        ) : globalView === 'blackout' && user.role === 'root' ? (
+          <BlackoutWindows onToggleSidebar={toggleSidebar} />
         ) : (
-          <>
-            {currentView === 'ec2' && <EmployeeDashboard user={user} view="ec2" onToggleSidebar={toggleSidebar} />}
-            {currentView === 'requests' && <EmployeeDashboard user={user} view="requests" onToggleSidebar={toggleSidebar} />}
-            {currentView === 'my-projects' && <ProjectAdminDashboard user={user} onToggleSidebar={toggleSidebar} />}
-          </>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', gap: 12 }}>
+            <FolderOpen24Regular style={{ fontSize: 48 }} />
+            <p style={{ fontSize: 14 }}>Select a project from the sidebar</p>
+          </div>
         )}
       </main>
     </div>

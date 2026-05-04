@@ -50,9 +50,19 @@ func TeamsAuth(db *service.DynamoDBService) gin.HandlerFunc {
 			if role == "dev-mock-token" || role == "" {
 				role = os.Getenv("DEV_ROLE")
 			}
-			c.Set(ContextKeyUserID, "dev-user-"+role)
-			c.Set(ContextKeyUserName, "Demo ("+role+")")
-			c.Set(ContextKeyEmail, role+"@example.com")
+			userID := "dev-user-" + role
+			displayName := "Demo (" + role + ")"
+			email := role + "@example.com"
+
+			// Ensure dev user exists in DynamoDB so they appear in user lists and can be added to projects.
+			// Ignore errors (DynamoDB may be unavailable in fully offline dev).
+			if _, err := db.GetOrCreateUser(context.Background(), userID, displayName, email); err != nil {
+				_ = err
+			}
+
+			c.Set(ContextKeyUserID, userID)
+			c.Set(ContextKeyUserName, displayName)
+			c.Set(ContextKeyEmail, email)
 			c.Set(ContextKeyRole, role)
 			c.Next()
 			return
