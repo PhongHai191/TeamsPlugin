@@ -76,6 +76,7 @@ export function ProjectWorkspace({ project, user, onToggleSidebar }: Props) {
   const [otpInput, setOtpInput] = useState('')
   const [otpError, setOtpError] = useState('')
   const [denyInput, setDenyInput] = useState('')
+  const [userSearch, setUserSearch] = useState('')
 
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const showToast = (message: string, type: 'success' | 'error' = 'error') => setToast({ message, type })
@@ -276,6 +277,12 @@ export function ProjectWorkspace({ project, user, onToggleSidebar }: Props) {
   const filteredMyReqs = myReqFilter === 'all' ? myRequests : myRequests.filter(r => r.status === myReqFilter)
   const assignedIds = new Set(members.map(m => m.userId))
   const unassignedUsers = allUsers.filter(u => u.role === 'user' && !assignedIds.has(u.teamsUserId))
+  const searchedUsers = userSearch.trim()
+    ? unassignedUsers.filter(u =>
+        u.displayName.toLowerCase().includes(userSearch.toLowerCase()) ||
+        u.email.toLowerCase().includes(userSearch.toLowerCase())
+      )
+    : unassignedUsers
 
   const totpWarning = (
     <div style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -557,31 +564,43 @@ export function ProjectWorkspace({ project, user, onToggleSidebar }: Props) {
               </>
             )}
 
-            {isGlobalPrivileged && unassignedUsers.length > 0 && (
-              <>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', margin: '20px 0 8px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Add User</div>
-                <div className="table-container">
-                  <table className="data-table">
-                    <thead><tr><th>User</th><th>Email</th><th></th></tr></thead>
-                    <tbody>
-                      {unassignedUsers.map(u => (
-                        <tr key={u.teamsUserId} className="instance-row">
-                          <td className="name-cell">{u.displayName}</td>
-                          <td className="id-cell">{u.email}</td>
-                          <td className="action-cell">
-                            <button className="btn-action btn-action-success" style={{ fontSize: 12 }} onClick={() => handleAddMember(u.teamsUserId, 'member')}>
-                              <Add24Regular fontSize={13} style={{ marginRight: 3 }} />Member
-                            </button>
-                            <button className="btn-action" style={{ fontSize: 12, color: '#7b68ee', borderColor: 'rgba(123,104,238,0.3)' }} onClick={() => handleAddMember(u.teamsUserId, 'admin')}>
-                              <Add24Regular fontSize={13} style={{ marginRight: 3 }} />Admin
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
+            {isGlobalPrivileged && (
+              <div style={{ marginTop: 24 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Add User</div>
+                <input
+                  className="txt-input"
+                  placeholder="Search by name or email…"
+                  value={userSearch}
+                  onChange={e => setUserSearch(e.target.value)}
+                  style={{ marginBottom: 8, maxWidth: 360 }}
+                />
+                {userSearch.trim() && searchedUsers.length === 0 && (
+                  <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '8px 0' }}>No users found</div>
+                )}
+                {searchedUsers.length > 0 && (
+                  <div className="table-container">
+                    <table className="data-table">
+                      <thead><tr><th>User</th><th>Email</th><th></th></tr></thead>
+                      <tbody>
+                        {searchedUsers.map(u => (
+                          <tr key={u.teamsUserId} className="instance-row">
+                            <td className="name-cell">{u.displayName}</td>
+                            <td className="id-cell">{u.email}</td>
+                            <td className="action-cell">
+                              <button className="btn-action btn-action-success" style={{ fontSize: 12 }} onClick={() => { handleAddMember(u.teamsUserId, 'member'); setUserSearch('') }}>
+                                <Add24Regular fontSize={13} style={{ marginRight: 3 }} />Member
+                              </button>
+                              <button className="btn-action" style={{ fontSize: 12, color: '#7b68ee', borderColor: 'rgba(123,104,238,0.3)' }} onClick={() => { handleAddMember(u.teamsUserId, 'admin'); setUserSearch('') }}>
+                                <Add24Regular fontSize={13} style={{ marginRight: 3 }} />Admin
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             )}
 
             {members.length === 0 && !loading && (

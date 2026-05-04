@@ -143,10 +143,18 @@ export function AccountManagement({ onToggleSidebar, onNavigateToProject }: Prop
         </div>
 
         <div className="table-container">
-          <table className="data-table">
+          <table className="data-table" style={{ tableLayout: 'fixed', width: '100%' }}>
+            <colgroup>
+              <col style={{ width: 32 }} />
+              <col style={{ width: '22%' }} />
+              <col style={{ width: '34%' }} />
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: 60 }} />
+            </colgroup>
             <thead>
               <tr>
-                <th style={{ width: 32 }}></th>
+                <th></th>
                 <th>Account</th>
                 <th>Role ARN</th>
                 <th>Regions</th>
@@ -198,7 +206,7 @@ export function AccountManagement({ onToggleSidebar, onNavigateToProject }: Prop
                         onClick={() => onNavigateToProject?.(proj.projectId)}
                       >
                         <td></td>
-                        <td colSpan={4} style={{ paddingLeft: 32 }}>
+                        <td colSpan={4} style={{ paddingLeft: 32, overflow: 'hidden' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <FolderOpen20Regular style={{ color: 'var(--accent)', flexShrink: 0 }} />
                             <div>

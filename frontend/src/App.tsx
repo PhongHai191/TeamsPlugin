@@ -88,7 +88,7 @@ export default function App() {
       <aside className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
           <div className="logo-box"><ShieldCheckmark24Filled style={{ fontSize: 18 }} /></div>
-          <span className="app-name">DevOps Center</span>
+
           <button className="mobile-menu-btn" onClick={closeSidebar} style={{ marginLeft: 'auto', marginRight: 0 }}>
             <Dismiss24Regular />
           </button>
