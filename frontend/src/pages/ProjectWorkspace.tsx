@@ -258,7 +258,7 @@ export function ProjectWorkspace({ project, user, onToggleSidebar }: Props) {
       await createRequest({
         instanceId: inst.instanceId, instanceName: inst.name, reason,
         region: inst.region, operation, project: inst.project,
-        accountId: inst.accountId, projectId: inst.projectId,
+        accountId: inst.accountId, projectId: inst.projectId || project.projectId,
       })
       showToast(`${label} request submitted`, 'success')
     } catch (e: any) { showToast('Failed: ' + (e?.response?.data?.error || e.message)) }
