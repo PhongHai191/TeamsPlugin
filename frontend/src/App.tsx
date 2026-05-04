@@ -192,7 +192,7 @@ export default function App() {
         ) : globalView === 'projects' ? (
           <ProjectManagement onToggleSidebar={toggleSidebar} />
         ) : globalView === 'accounts' && user.role === 'root' ? (
-          <AccountManagement onToggleSidebar={toggleSidebar} />
+          <AccountManagement onToggleSidebar={toggleSidebar} onNavigateToProject={pid => { setSelectedProjectId(pid); setGlobalView(null) }} />
         ) : globalView === 'blackout' && user.role === 'root' ? (
           <BlackoutWindows onToggleSidebar={toggleSidebar} />
         ) : (

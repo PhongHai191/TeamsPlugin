@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react'
-import { ArrowClockwise20Regular } from '@fluentui/react-icons'
-import { listAccounts, createAccount, deleteAccount, generateExternalId } from '../lib/api'
-import type { AWSAccount } from '../types'
+import { ArrowClockwise20Regular, ChevronDown20Regular, ChevronRight20Regular } from '@fluentui/react-icons'
+import { listAccounts, createAccount, deleteAccount, generateExternalId, listAllProjects } from '../lib/api'
+import type { AWSAccount, Project } from '../types'
 import {
   Navigation24Regular, Cloud24Regular, Add24Regular, Delete24Regular,
-  Copy24Regular, Key24Regular,
+  Copy24Regular, Key24Regular, FolderOpen20Regular, ArrowRight20Regular,
 } from '@fluentui/react-icons'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { Toast } from '../components/Toast'
 
 interface Props {
   onToggleSidebar?: () => void
+  onNavigateToProject?: (projectId: string) => void
 }
 
 interface AccountForm {
@@ -31,8 +32,10 @@ const emptyForm = (): AccountForm => ({
   project: '',
 })
 
-export function AccountManagement({ onToggleSidebar }: Props) {
+export function AccountManagement({ onToggleSidebar, onNavigateToProject }: Props) {
   const [accounts, setAccounts] = useState<AWSAccount[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
+  const [expandedAccountId, setExpandedAccountId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [form, setForm] = useState<AccountForm>(emptyForm())
@@ -43,13 +46,17 @@ export function AccountManagement({ onToggleSidebar }: Props) {
 
   const showToast = (message: string, type: 'success' | 'error' = 'error') => setToast({ message, type })
 
-  const fetchAccounts = async () => {
+  const fetchData = async () => {
     setLoading(true)
-    try { setAccounts(await listAccounts()) } catch { /* ignore */ }
+    try {
+      const [accs, projs] = await Promise.all([listAccounts(), listAllProjects().catch(() => [])])
+      setAccounts(accs)
+      setProjects(projs)
+    } catch { /* ignore */ }
     setLoading(false)
   }
 
-  useEffect(() => { fetchAccounts() }, [])
+  useEffect(() => { fetchData() }, [])
 
   const openAdd = async () => {
     const f = emptyForm()
@@ -73,7 +80,7 @@ export function AccountManagement({ onToggleSidebar }: Props) {
         project: form.project.trim(),
       })
       setAddModalOpen(false)
-      await fetchAccounts()
+      await fetchData()
     } catch (e: any) {
       showToast('Failed: ' + (e?.response?.data?.error || e.message))
     }
@@ -82,7 +89,7 @@ export function AccountManagement({ onToggleSidebar }: Props) {
 
   const confirmDeleteAccount = async () => {
     if (!confirmDelete) return
-    try { await deleteAccount(confirmDelete.accountId); await fetchAccounts(); showToast('Account removed', 'success') }
+    try { await deleteAccount(confirmDelete.accountId); await fetchData(); showToast('Account removed', 'success') }
     catch { showToast('Delete failed') }
     setConfirmDelete(null)
   }
@@ -92,6 +99,12 @@ export function AccountManagement({ onToggleSidebar }: Props) {
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
+
+  const toggleExpand = (accountId: string) => {
+    setExpandedAccountId(prev => prev === accountId ? null : accountId)
+  }
+
+  const projectsForAccount = (accountId: string) => projects.filter(p => p.accountId === accountId)
 
   return (
     <div className="view-section active">
@@ -123,7 +136,7 @@ export function AccountManagement({ onToggleSidebar }: Props) {
             </div>
           </div>
           <div className="hero-right">
-            <button className="btn-ghost" onClick={fetchAccounts} disabled={loading}>
+            <button className="btn-ghost" onClick={fetchData} disabled={loading}>
               {loading ? 'Loading...' : <><ArrowClockwise20Regular style={{ marginRight: 6, verticalAlign: 'middle' }} />Refresh</>}
             </button>
           </div>
@@ -133,34 +146,79 @@ export function AccountManagement({ onToggleSidebar }: Props) {
           <table className="data-table">
             <thead>
               <tr>
+                <th style={{ width: 32 }}></th>
                 <th>Account</th>
                 <th>Role ARN</th>
                 <th>Regions</th>
-                <th>Project tag</th>
+                <th>Projects</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {accounts.map(acc => (
-                <tr key={acc.accountId} className="instance-row">
-                  <td className="name-cell">
-                    <div style={{ fontWeight: 600 }}>{acc.alias}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{acc.accountId}</div>
-                  </td>
-                  <td style={{ fontSize: 12, fontFamily: 'monospace', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {acc.roleArn}
-                  </td>
-                  <td className="id-cell">{acc.regions?.join(', ')}</td>
-                  <td className="id-cell" style={{ color: acc.project ? 'inherit' : 'var(--text-muted)' }}>{acc.project || '—'}</td>
-                  <td className="action-cell">
-                    <button className="btn-icon-action" title="Delete account" style={{ color: 'var(--status-stopped)' }} onClick={() => setConfirmDelete(acc)}>
-                      <Delete24Regular fontSize={16} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {accounts.map(acc => {
+                const accProjects = projectsForAccount(acc.accountId)
+                const isExpanded = expandedAccountId === acc.accountId
+                return (
+                  <>
+                    <tr
+                      key={acc.accountId}
+                      className="instance-row"
+                      style={{ cursor: accProjects.length > 0 ? 'pointer' : 'default' }}
+                      onClick={() => accProjects.length > 0 && toggleExpand(acc.accountId)}
+                    >
+                      <td style={{ color: 'var(--text-muted)', paddingLeft: 12 }}>
+                        {accProjects.length > 0
+                          ? (isExpanded ? <ChevronDown20Regular /> : <ChevronRight20Regular />)
+                          : null
+                        }
+                      </td>
+                      <td className="name-cell">
+                        <div style={{ fontWeight: 600 }}>{acc.alias}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{acc.accountId}</div>
+                      </td>
+                      <td style={{ fontSize: 12, fontFamily: 'monospace', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: acc.roleArn ? 'inherit' : 'var(--text-muted)' }}>
+                        {acc.roleArn || 'hub (native creds)'}
+                      </td>
+                      <td className="id-cell">{acc.regions?.join(', ')}</td>
+                      <td className="id-cell" style={{ color: accProjects.length > 0 ? 'var(--accent)' : 'var(--text-muted)' }}>
+                        {accProjects.length > 0 ? `${accProjects.length} project${accProjects.length > 1 ? 's' : ''}` : '—'}
+                      </td>
+                      <td className="action-cell" onClick={e => e.stopPropagation()}>
+                        <button className="btn-icon-action" title="Delete account" style={{ color: 'var(--status-stopped)' }} onClick={() => setConfirmDelete(acc)}>
+                          <Delete24Regular fontSize={16} />
+                        </button>
+                      </td>
+                    </tr>
+
+                    {isExpanded && accProjects.map(proj => (
+                      <tr
+                        key={proj.projectId}
+                        className="instance-row"
+                        style={{ background: 'var(--bg-secondary)', cursor: 'pointer' }}
+                        onClick={() => onNavigateToProject?.(proj.projectId)}
+                      >
+                        <td></td>
+                        <td colSpan={4} style={{ paddingLeft: 32 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <FolderOpen20Regular style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                            <div>
+                              <div style={{ fontWeight: 500 }}>{proj.name}</div>
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{proj.instanceIds?.length ?? 0} instances · {proj.memberCount ?? 0} members</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--accent)' }}>
+                            Open <ArrowRight20Regular fontSize={14} />
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </>
+                )
+              })}
               {accounts.length === 0 && (
-                <tr><td colSpan={5} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
+                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
                   No accounts added yet
                 </td></tr>
               )}
