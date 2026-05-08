@@ -111,9 +111,9 @@ export const deleteBlackoutWindow = (id: string): Promise<void> =>
 export const toggleBlackoutWindow = (id: string, active: boolean): Promise<void> =>
   api.patch(`/root/blackout/${id}/toggle`, null, { params: { active } }).then(r => r.data)
 
-// AWS Accounts (root only)
+// AWS Accounts — list readable by admin+root; create/delete root only
 export const listAccounts = (): Promise<AWSAccount[]> =>
-  api.get('/root/accounts').then(r => r.data || [])
+  api.get('/admin/accounts').then(r => r.data || [])
 
 export const createAccount = (payload: {
   accountId: string
@@ -129,7 +129,7 @@ export const deleteAccount = (id: string): Promise<void> =>
   api.delete(`/root/accounts/${id}`).then(r => r.data)
 
 export const generateExternalId = (): Promise<{ externalId: string }> =>
-  api.get('/root/accounts/generate-external-id').then(r => r.data)
+  api.get('/admin/accounts/generate-external-id').then(r => r.data)
 
 // Projects (admin manages; all users can read their own)
 export const listMyProjects = (): Promise<Project[]> =>

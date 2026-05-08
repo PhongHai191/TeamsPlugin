@@ -276,8 +276,13 @@ func (h *ProjectsHandler) ListRequests(c *gin.Context) {
 	if err := h.requireProjectAdminOrGlobalAdmin(c, projectID); err != nil {
 		return
 	}
+	proj, err := h.db.GetProject(c.Request.Context(), projectID)
+	if err != nil || proj == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
+		return
+	}
 	statusFilter := c.Query("status")
-	requests, err := h.db.ListRequestsByProject(c.Request.Context(), projectID, statusFilter)
+	requests, err := h.db.ListRequestsByProject(c.Request.Context(), projectID, proj.InstanceIDs, statusFilter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

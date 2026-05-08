@@ -751,26 +751,51 @@ func (s *DynamoDBService) ListUserProjects(ctx context.Context, userID string) (
 }
 
 // ListRequestsByProject returns all requests belonging to a project.
-func (s *DynamoDBService) ListRequestsByProject(ctx context.Context, projectID, statusFilter string) ([]model.RestartRequest, error) {
+// Matches by projectId OR by instanceId (for legacy requests created before projectId was set).
+func (s *DynamoDBService) ListRequestsByProject(ctx context.Context, projectID string, instanceIDs []string, statusFilter string) ([]model.RestartRequest, error) {
+	exprValues := map[string]types.AttributeValue{
+		":pid": &types.AttributeValueMemberS{Value: projectID},
+	}
+
+	// Build: projectId = :pid OR instanceId = :iid0 OR instanceId = :iid1 ...
+	instanceClauses := ""
+	for i, iid := range instanceIDs {
+		key := fmt.Sprintf(":iid%d", i)
+		exprValues[key] = &types.AttributeValueMemberS{Value: iid}
+		instanceClauses += " OR instanceId = " + key
+	}
+	filterExpr := "projectId = :pid" + instanceClauses
+
+	if statusFilter != "" {
+		exprValues[":status"] = &types.AttributeValueMemberS{Value: statusFilter}
+		filterExpr = "(" + filterExpr + ") AND #s = :status"
+	}
+
 	input := &dynamodb.ScanInput{
-		TableName:        aws.String(tableRequests),
-		FilterExpression: aws.String("projectId = :pid"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pid": &types.AttributeValueMemberS{Value: projectID},
-		},
+		TableName:                 aws.String(tableRequests),
+		FilterExpression:          aws.String(filterExpr),
+		ExpressionAttributeValues: exprValues,
 	}
 	if statusFilter != "" {
-		input.FilterExpression = aws.String("projectId = :pid AND #s = :status")
 		input.ExpressionAttributeNames = map[string]string{"#s": "status"}
-		input.ExpressionAttributeValues[":status"] = &types.AttributeValueMemberS{Value: statusFilter}
 	}
+
 	out, err := s.client.Scan(ctx, input)
 	if err != nil {
 		return nil, err
 	}
+	// Deduplicate (a request could match both projectId and instanceId)
+	seen := map[string]bool{}
 	var requests []model.RestartRequest
-	if err := attributevalue.UnmarshalListOfMaps(out.Items, &requests); err != nil {
-		return nil, err
+	for _, item := range out.Items {
+		var r model.RestartRequest
+		if err := attributevalue.UnmarshalMap(item, &r); err != nil {
+			continue
+		}
+		if !seen[r.RequestID] {
+			seen[r.RequestID] = true
+			requests = append(requests, r)
+		}
 	}
 	sort.Slice(requests, func(i, j int) bool {
 		return requests[i].CreatedAt.After(requests[j].CreatedAt)

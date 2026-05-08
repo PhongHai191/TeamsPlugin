@@ -112,6 +112,9 @@ func main() {
 		}
 
 		admin.GET("/blackout", blackoutHandler.List)
+		// Accounts list readable by admin+root (needed for project creation wizard)
+		admin.GET("/accounts", accountsHandler.List)
+		admin.GET("/accounts/generate-external-id", accountsHandler.GenerateExternalID)
 
 		root := group.Group("/root", rootOnly)
 		{
@@ -120,10 +123,9 @@ func main() {
 			root.PUT("/blackout/:id", blackoutHandler.Update)
 			root.DELETE("/blackout/:id", blackoutHandler.Delete)
 			root.PATCH("/blackout/:id/toggle", blackoutHandler.Toggle)
-			root.GET("/accounts", accountsHandler.List)
+			// Destructive account ops remain root-only
 			root.POST("/accounts", accountsHandler.Create)
 			root.DELETE("/accounts/:id", accountsHandler.Delete)
-			root.GET("/accounts/generate-external-id", accountsHandler.GenerateExternalID)
 		}
 	}
 
