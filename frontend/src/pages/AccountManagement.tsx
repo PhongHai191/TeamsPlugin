@@ -202,7 +202,7 @@ export function AccountManagement({ onToggleSidebar, onNavigateToProject }: Prop
                             <FolderOpen20Regular style={{ color: 'var(--accent)', flexShrink: 0 }} />
                             <div>
                               <div style={{ fontWeight: 500 }}>{proj.name}</div>
-                              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{proj.instanceIds?.length ?? 0} instances · {proj.memberCount ?? 0} members</div>
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{proj.memberCount ?? 0} members</div>
                             </div>
                           </div>
                         </td>
