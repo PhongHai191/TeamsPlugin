@@ -31,7 +31,7 @@ export default function App() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [globalView, setGlobalView] = useState<GlobalView | null>(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
-  const [pendingCount, setPendingCount] = useState(0)
+  const [pendingCounts, setPendingCounts] = useState<Record<string, number>>({})
 
   const isPrivileged = user?.role === 'admin' || user?.role === 'root'
 
@@ -52,16 +52,14 @@ export default function App() {
     }).catch(() => {})
   }, [user])
 
-  // Pending badge: sum of pending requests across all projects the user can see
+  // Pending badge per project
   useEffect(() => {
-    if (projects.length === 0) { setPendingCount(0); return }
+    if (projects.length === 0) { setPendingCounts({}); return }
     const fetch = async () => {
-      try {
-        const counts = await Promise.all(
-          projects.map(p => listProjectRequests(p.projectId, 'pending').then(r => r.length).catch(() => 0))
-        )
-        setPendingCount(counts.reduce((a, b) => a + b, 0))
-      } catch { /* ignore */ }
+      const entries = await Promise.all(
+        projects.map(p => listProjectRequests(p.projectId, 'pending').then(r => [p.projectId, r.length] as const).catch(() => [p.projectId, 0] as const))
+      )
+      setPendingCounts(Object.fromEntries(entries))
     }
     fetch()
     const t = setInterval(fetch, 30000)
@@ -126,7 +124,6 @@ export default function App() {
           {/* Projects section */}
           <div className="nav-section-header">
             <span>My Projects</span>
-            {pendingCount > 0 && <span className="badge">{pendingCount}</span>}
           </div>
 
           {projects.length === 0 ? (
@@ -144,6 +141,9 @@ export default function App() {
                 <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {p.name}
                 </span>
+                {(pendingCounts[p.projectId] ?? 0) > 0 && (
+                  <span className="badge">{pendingCounts[p.projectId]}</span>
+                )}
               </div>
             ))
           )}
