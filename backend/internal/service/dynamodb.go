@@ -50,6 +50,20 @@ func (s *DynamoDBService) GetOrCreateUser(ctx context.Context, teamsUserID, disp
 		if err := attributevalue.UnmarshalMap(out.Item, &user); err != nil {
 			return nil, err
 		}
+		// Backfill email if missing (user created before email was stored)
+		if user.Email == "" && email != "" {
+			_, _ = s.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+				TableName: aws.String(tableUsers),
+				Key: map[string]types.AttributeValue{
+					"teamsUserId": &types.AttributeValueMemberS{Value: teamsUserID},
+				},
+				UpdateExpression: aws.String("SET email = :e"),
+				ExpressionAttributeValues: map[string]types.AttributeValue{
+					":e": &types.AttributeValueMemberS{Value: email},
+				},
+			})
+			user.Email = email
+		}
 		return &user, nil
 	}
 
