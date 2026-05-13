@@ -81,50 +81,45 @@ func (s *EC2Service) ListInstancesForAccountByProjectNames(ctx context.Context, 
 }
 
 func (s *EC2Service) listInstancesForAccountFiltered(ctx context.Context, account model.AWSAccount, userEmail string, allowedIDs map[string]bool) ([]model.EC2Instance, error) {
-	// Hub account: RoleARN empty — use native credentials directly
+	var baseCfg aws.Config
 	if account.RoleARN == "" {
-		regions, err := listEnabledRegions(ctx, s.baseCfg)
+		baseCfg = s.baseCfg
+	} else {
+		creds, err := s.assumeRole(ctx, account.RoleARN, account.ExternalID, userEmail)
 		if err != nil {
-			log.Printf("[EC2] hub account %s DescribeRegions error: %v", account.AccountID, err)
-			return nil, err
+			return nil, fmt.Errorf("account %s: %w", account.AccountID, err)
 		}
-		var all []model.EC2Instance
-		for _, region := range regions {
-			cfg := s.baseCfg.Copy()
-			cfg.Region = region
-			client := ec2.NewFromConfig(cfg)
-			insts, err := s.listForRegion(ctx, client, region, account.AccountID, account.Alias, allowedIDs)
-			if err != nil {
-				log.Printf("[EC2] hub account %s region %s list error: %v", account.AccountID, region, err)
-				continue
-			}
-			all = append(all, insts...)
-		}
-		return all, nil
+		baseCfg = s.baseCfg.Copy()
+		baseCfg.Credentials = creds
 	}
 
-	creds, err := s.assumeRole(ctx, account.RoleARN, account.ExternalID, userEmail)
-	if err != nil {
-		return nil, fmt.Errorf("account %s: %w", account.AccountID, err)
-	}
-	spokeCfg := s.baseCfg.Copy()
-	spokeCfg.Credentials = creds
-	regions, err := listEnabledRegions(ctx, spokeCfg)
+	regions, err := listEnabledRegions(ctx, baseCfg)
 	if err != nil {
 		log.Printf("[EC2] account %s DescribeRegions error: %v", account.AccountID, err)
 		return nil, err
 	}
-	var all []model.EC2Instance
+
+	type result struct {
+		insts []model.EC2Instance
+		err   error
+	}
+	ch := make(chan result, len(regions))
 	for _, region := range regions {
-		cfg := spokeCfg.Copy()
-		cfg.Region = region
-		client := ec2.NewFromConfig(cfg)
-		insts, err := s.listForRegion(ctx, client, region, account.AccountID, account.Alias, allowedIDs)
-		if err != nil {
-			log.Printf("[EC2] account %s region %s list error: %v", account.AccountID, region, err)
+		go func(r string) {
+			cfg := baseCfg.Copy()
+			cfg.Region = r
+			insts, err := s.listForRegion(ctx, ec2.NewFromConfig(cfg), r, account.AccountID, account.Alias, allowedIDs)
+			ch <- result{insts, err}
+		}(region)
+	}
+
+	var all []model.EC2Instance
+	for range regions {
+		res := <-ch
+		if res.err != nil {
 			continue
 		}
-		all = append(all, insts...)
+		all = append(all, res.insts...)
 	}
 	return all, nil
 }

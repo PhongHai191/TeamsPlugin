@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   listInstances, listMyRequests, createRequest,
   listProjectRequests, approveProjectRequestWithOTP, denyProjectRequest,
@@ -53,6 +53,7 @@ export function ProjectWorkspace({ project, user, onToggleSidebar }: Props) {
   const [members, setMembers] = useState<ProjectMember[]>([])
   const [allUsers, setAllUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(false)
+  const loadedInstancesFor = useRef<string | null>(null)
 
   const [ec2Filter, setEc2Filter] = useState('all')
   const [reqFilter, setReqFilter] = useState('all')
@@ -116,8 +117,13 @@ export function ProjectWorkspace({ project, user, onToggleSidebar }: Props) {
   }, [project.projectId])
 
   useEffect(() => {
-    if (tab === 'ec2') fetchInstances()
-    else if (tab === 'requests') fetchRequests()
+    if (tab === 'ec2') {
+      // Only auto-fetch once per project; Scan button forces a manual refresh
+      if (loadedInstancesFor.current !== project.projectId) {
+        loadedInstancesFor.current = project.projectId
+        fetchInstances()
+      }
+    } else if (tab === 'requests') fetchRequests()
     else if (tab === 'my-requests') fetchMyRequests()
     else if (tab === 'members') fetchMembers()
   }, [tab, project.projectId])
