@@ -35,6 +35,12 @@ export default function App() {
 
   const isPrivileged = user?.role === 'admin' || user?.role === 'root'
 
+  const refreshProjects = () => {
+    listMyProjects().then(ps => {
+      setProjects(ps)
+    }).catch(() => {})
+  }
+
   // Fetch projects once user is loaded
   useEffect(() => {
     if (!user) return
@@ -192,7 +198,7 @@ export default function App() {
         ) : globalView === 'users' ? (
           <UserManagement callerRole={user.role} onToggleSidebar={toggleSidebar} />
         ) : globalView === 'projects' ? (
-          <ProjectManagement onToggleSidebar={toggleSidebar} />
+          <ProjectManagement onToggleSidebar={toggleSidebar} onProjectsChange={refreshProjects} />
         ) : globalView === 'accounts' && user.role === 'root' ? (
           <AccountManagement onToggleSidebar={toggleSidebar} onNavigateToProject={pid => { setSelectedProjectId(pid); setGlobalView(null) }} />
         ) : globalView === 'blackout' && user.role === 'root' ? (

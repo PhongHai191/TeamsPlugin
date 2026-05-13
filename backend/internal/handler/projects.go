@@ -3,6 +3,7 @@ package handler
 import (
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pquerna/otp/totp"
@@ -175,6 +176,8 @@ func (h *ProjectsHandler) Delete(c *gin.Context) {
 }
 
 // GET /api/admin/accounts/:id/instances — load instances from an account (for create project form)
+// Optional query param: ?projectName=X  → only return instances whose Project tag matches X (case-insensitive)
+// Optional query param: ?excludeProject=id → exclude instances already in the given project
 func (h *ProjectsHandler) ListAccountInstances(c *gin.Context) {
 	accountID := c.Param("id")
 	acc, err := h.db.GetAWSAccount(c.Request.Context(), accountID)
@@ -191,7 +194,74 @@ func (h *ProjectsHandler) ListAccountInstances(c *gin.Context) {
 	if insts == nil {
 		insts = []model.EC2Instance{}
 	}
+
+	// Filter by Project tag if requested
+	if projectName := c.Query("projectName"); projectName != "" {
+		needle := strings.ToLower(projectName)
+		filtered := insts[:0]
+		for _, inst := range insts {
+			if strings.ToLower(inst.Project) == needle {
+				filtered = append(filtered, inst)
+			}
+		}
+		insts = filtered
+	}
+
+	// Exclude instances already belonging to a given project
+	if excludeID := c.Query("excludeProject"); excludeID != "" {
+		proj, err := h.db.GetProject(c.Request.Context(), excludeID)
+		if err == nil && proj != nil {
+			existing := make(map[string]bool, len(proj.InstanceIDs))
+			for _, id := range proj.InstanceIDs {
+				existing[id] = true
+			}
+			filtered := insts[:0]
+			for _, inst := range insts {
+				if !existing[inst.InstanceID] {
+					filtered = append(filtered, inst)
+				}
+			}
+			insts = filtered
+		}
+	}
+
 	c.JSON(http.StatusOK, insts)
+}
+
+// PATCH /api/admin/projects/:id/instances — add instances to an existing project
+func (h *ProjectsHandler) AddInstances(c *gin.Context) {
+	projectID := c.Param("id")
+	proj, err := h.db.GetProject(c.Request.Context(), projectID)
+	if err != nil || proj == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
+		return
+	}
+
+	var body struct {
+		InstanceIDs []string `json:"instanceIds" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	existing := make(map[string]bool, len(proj.InstanceIDs))
+	for _, id := range proj.InstanceIDs {
+		existing[id] = true
+	}
+	merged := append([]string{}, proj.InstanceIDs...)
+	for _, id := range body.InstanceIDs {
+		if !existing[id] {
+			merged = append(merged, id)
+		}
+	}
+
+	if err := h.db.UpdateProjectInstances(c.Request.Context(), projectID, merged); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	proj.InstanceIDs = merged
+	c.JSON(http.StatusOK, proj)
 }
 
 // GET /api/admin/projects/:id/members — admin or project admin lists members

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import {
   listAllProjects, deleteProject, listAccounts, listAccountInstances,
   listUsers, createProject, listProjectMembers, addProjectMember,
-  removeProjectMember, updateProjectMemberRole,
+  removeProjectMember, updateProjectMemberRole, addProjectInstances,
 } from '../lib/api'
 import type { AWSAccount, EC2Instance, Project, ProjectMember, User } from '../types'
 import {
@@ -15,11 +15,12 @@ import { Toast } from '../components/Toast'
 
 interface Props {
   onToggleSidebar?: () => void
+  onProjectsChange?: () => void
 }
 
 type Step = 'list' | 'create-account' | 'create-instances' | 'create-members'
 
-export function ProjectManagement({ onToggleSidebar }: Props) {
+export function ProjectManagement({ onToggleSidebar, onProjectsChange }: Props) {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<Step>('list')
@@ -29,6 +30,11 @@ export function ProjectManagement({ onToggleSidebar }: Props) {
   // Detail modal
   const [detailProject, setDetailProject] = useState<Project | null>(null)
   const [detailMembers, setDetailMembers] = useState<ProjectMember[]>([])
+  const [detailTab, setDetailTab] = useState<'members' | 'instances'>('members')
+  const [availableInstances, setAvailableInstances] = useState<EC2Instance[]>([])
+  const [loadingAvailInst, setLoadingAvailInst] = useState(false)
+  const [selectedAddInstIds, setSelectedAddInstIds] = useState<Set<string>>(new Set())
+  const [addingInstances, setAddingInstances] = useState(false)
 
   // Create wizard state
   const [accounts, setAccounts] = useState<AWSAccount[]>([])
@@ -74,7 +80,7 @@ export function ProjectManagement({ onToggleSidebar }: Props) {
     setAccountInstances([])
     setSelectedInstanceIds(new Set())
     try {
-      const insts = await listAccountInstances(acc.accountId)
+      const insts = await listAccountInstances(acc.accountId, { projectName: wizardName })
       setAccountInstances(insts)
     } catch {
       showToast('Failed to load instances from this account')
@@ -127,6 +133,7 @@ export function ProjectManagement({ onToggleSidebar }: Props) {
       showToast('Project created', 'success')
       setStep('list')
       await fetchProjects()
+      onProjectsChange?.()
     } catch (e: any) {
       showToast('Failed: ' + (e?.response?.data?.error || e.message))
     }
@@ -135,12 +142,45 @@ export function ProjectManagement({ onToggleSidebar }: Props) {
 
   const openDetail = async (p: Project) => {
     setDetailProject(p)
+    setDetailTab('members')
+    setAvailableInstances([])
+    setSelectedAddInstIds(new Set())
     const [members, users] = await Promise.all([
       listProjectMembers(p.projectId).catch(() => [] as ProjectMember[]),
       allUsers.length > 0 ? Promise.resolve(allUsers) : listUsers().catch(() => [] as User[]),
     ])
     setDetailMembers(members)
     if (allUsers.length === 0) setAllUsers(users)
+  }
+
+  const loadAvailableInstances = async (p: Project) => {
+    setLoadingAvailInst(true)
+    try {
+      const insts = await listAccountInstances(p.accountId, {
+        projectName: p.name,
+        excludeProject: p.projectId,
+      })
+      setAvailableInstances(insts)
+    } catch {
+      showToast('Failed to load instances')
+    }
+    setLoadingAvailInst(false)
+  }
+
+  const handleAddInstances = async () => {
+    if (!detailProject || selectedAddInstIds.size === 0) return
+    setAddingInstances(true)
+    try {
+      const updated = await addProjectInstances(detailProject.projectId, Array.from(selectedAddInstIds))
+      setDetailProject(updated)
+      setProjects(prev => prev.map(p => p.projectId === updated.projectId ? { ...p, instanceIds: updated.instanceIds } : p))
+      setAvailableInstances(prev => prev.filter(i => !selectedAddInstIds.has(i.instanceId)))
+      setSelectedAddInstIds(new Set())
+      showToast(`${selectedAddInstIds.size} instance(s) added`, 'success')
+    } catch (e: any) {
+      showToast(e?.response?.data?.error || 'Failed to add instances')
+    }
+    setAddingInstances(false)
   }
 
   const handleDetailRemove = async (uid: string) => {
@@ -179,6 +219,7 @@ export function ProjectManagement({ onToggleSidebar }: Props) {
       await deleteProject(confirmDelete.projectId)
       showToast('Project deleted — pending requests auto-denied', 'success')
       await fetchProjects()
+      onProjectsChange?.()
     } catch { showToast('Delete failed') }
     setConfirmDelete(null)
   }
@@ -253,78 +294,145 @@ export function ProjectManagement({ onToggleSidebar }: Props) {
           </div>
         </div>
 
-        {/* Members detail modal */}
+        {/* Project detail modal */}
         {detailProject && (
           <div className="modal">
-            <div className="modal-card" style={{ width: 520 }}>
+            <div className="modal-card" style={{ width: 560 }}>
               <div className="modal-header">
-                <span className="modal-icon"><People24Regular style={{ fontSize: 28 }} /></span>
-                <div><h2>{detailProject.name}</h2><p className="modal-subtitle">{detailMembers.length} members</p></div>
+                <span className="modal-icon"><FolderOpen24Regular style={{ fontSize: 28 }} /></span>
+                <div><h2>{detailProject.name}</h2><p className="modal-subtitle">{detailProject.accountId}</p></div>
               </div>
-              <div className="modal-body" style={{ maxHeight: 420, overflowY: 'auto', padding: 0 }}>
-                {/* Current members */}
-                {detailMembers.length > 0 && (
-                  <table className="data-table" style={{ margin: 0 }}>
-                    <thead><tr><th>User</th><th>Role</th><th style={{ width: 80 }}></th></tr></thead>
-                    <tbody>
-                      {detailMembers.map(m => (
-                        <tr key={m.userId} className="instance-row">
-                          <td className="name-cell" style={{ fontSize: 13 }}>{m.userName || m.userId}</td>
-                          <td>
-                            <span style={{ background: m.role === 'admin' ? 'rgba(123,104,238,0.15)' : 'rgba(80,200,120,0.15)', color: m.role === 'admin' ? '#7b68ee' : '#50c878', borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>
-                              {m.role}
-                            </span>
-                          </td>
-                          <td className="action-cell">
-                            <button className="btn-icon-action" title={m.role === 'admin' ? 'Demote to member' : 'Promote to admin'} style={{ color: '#7b68ee' }} onClick={() => handleDetailToggleRole(m)}>
-                              <ArrowSwap24Regular fontSize={15} />
-                            </button>
-                            <button className="btn-icon-action" title="Remove from project" style={{ color: 'var(--status-stopped)' }} onClick={() => handleDetailRemove(m.userId)}>
-                              <Delete24Regular fontSize={15} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-                {detailMembers.length === 0 && (
-                  <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>No members yet</p>
-                )}
-                {/* Add member section */}
-                {(() => {
-                  const assignedIds = new Set(detailMembers.map(m => m.userId))
-                  const available = allUsers.filter(u => u.role === 'user' && !assignedIds.has(u.teamsUserId))
-                  if (available.length === 0) return null
-                  return (
-                    <>
-                      <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', padding: '12px 16px 4px', borderTop: '1px solid var(--border-light)' }}>Add User</div>
+
+              {/* Tab bar */}
+              <div style={{ display: 'flex', borderBottom: '1px solid var(--border-light)', padding: '0 16px' }}>
+                {(['members', 'instances'] as const).map(tab => (
+                  <button key={tab} onClick={() => {
+                    setDetailTab(tab)
+                    if (tab === 'instances' && availableInstances.length === 0 && !loadingAvailInst) {
+                      loadAvailableInstances(detailProject)
+                    }
+                  }} style={{
+                    background: 'none', border: 'none', cursor: 'pointer', padding: '10px 16px',
+                    fontSize: 13, fontWeight: detailTab === tab ? 600 : 400,
+                    color: detailTab === tab ? 'var(--accent)' : 'var(--text-muted)',
+                    borderBottom: detailTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
+                    marginBottom: -1,
+                  }}>
+                    {tab === 'members' ? <><People24Regular fontSize={14} style={{ marginRight: 5, verticalAlign: 'middle' }} />Members ({detailMembers.length})</> : <><Server24Regular fontSize={14} style={{ marginRight: 5, verticalAlign: 'middle' }} />Instances ({detailProject.instanceIds?.length ?? 0})</>}
+                  </button>
+                ))}
+              </div>
+
+              <div className="modal-body" style={{ maxHeight: 400, overflowY: 'auto', padding: 0 }}>
+                {detailTab === 'members' && (
+                  <>
+                    {detailMembers.length > 0 && (
                       <table className="data-table" style={{ margin: 0 }}>
+                        <thead><tr><th>User</th><th>Role</th><th style={{ width: 80 }}></th></tr></thead>
                         <tbody>
-                          {available.map(u => (
-                            <tr key={u.teamsUserId} className="instance-row">
-                              <td className="name-cell" style={{ fontSize: 13 }}>
-                                <div>{u.displayName}</div>
-                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{u.email}</div>
+                          {detailMembers.map(m => (
+                            <tr key={m.userId} className="instance-row">
+                              <td className="name-cell" style={{ fontSize: 13 }}>{m.userName || m.userId}</td>
+                              <td>
+                                <span style={{ background: m.role === 'admin' ? 'rgba(123,104,238,0.15)' : 'rgba(80,200,120,0.15)', color: m.role === 'admin' ? '#7b68ee' : '#50c878', borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>
+                                  {m.role}
+                                </span>
                               </td>
                               <td className="action-cell">
-                                <button className="btn-action btn-action-success" style={{ fontSize: 12 }} onClick={() => handleDetailAddMember(u.teamsUserId, 'member')}>
-                                  <Add24Regular fontSize={13} style={{ marginRight: 3 }} />Member
+                                <button className="btn-icon-action" title={m.role === 'admin' ? 'Demote to member' : 'Promote to admin'} style={{ color: '#7b68ee' }} onClick={() => handleDetailToggleRole(m)}>
+                                  <ArrowSwap24Regular fontSize={15} />
                                 </button>
-                                <button className="btn-action" style={{ fontSize: 12, color: '#7b68ee', borderColor: 'rgba(123,104,238,0.3)' }} onClick={() => handleDetailAddMember(u.teamsUserId, 'admin')}>
-                                  <Add24Regular fontSize={13} style={{ marginRight: 3 }} />Admin
+                                <button className="btn-icon-action" title="Remove from project" style={{ color: 'var(--status-stopped)' }} onClick={() => handleDetailRemove(m.userId)}>
+                                  <Delete24Regular fontSize={15} />
                                 </button>
                               </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
-                    </>
-                  )
-                })()}
+                    )}
+                    {detailMembers.length === 0 && (
+                      <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>No members yet</p>
+                    )}
+                    {(() => {
+                      const assignedIds = new Set(detailMembers.map(m => m.userId))
+                      const available = allUsers.filter(u => u.role === 'user' && !assignedIds.has(u.teamsUserId))
+                      if (available.length === 0) return null
+                      return (
+                        <>
+                          <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', padding: '12px 16px 4px', borderTop: '1px solid var(--border-light)' }}>Add User</div>
+                          <table className="data-table" style={{ margin: 0 }}>
+                            <tbody>
+                              {available.map(u => (
+                                <tr key={u.teamsUserId} className="instance-row">
+                                  <td className="name-cell" style={{ fontSize: 13 }}>
+                                    <div>{u.displayName}</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{u.email}</div>
+                                  </td>
+                                  <td className="action-cell">
+                                    <button className="btn-action btn-action-success" style={{ fontSize: 12 }} onClick={() => handleDetailAddMember(u.teamsUserId, 'member')}>
+                                      <Add24Regular fontSize={13} style={{ marginRight: 3 }} />Member
+                                    </button>
+                                    <button className="btn-action" style={{ fontSize: 12, color: '#7b68ee', borderColor: 'rgba(123,104,238,0.3)' }} onClick={() => handleDetailAddMember(u.teamsUserId, 'admin')}>
+                                      <Add24Regular fontSize={13} style={{ marginRight: 3 }} />Admin
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </>
+                      )
+                    })()}
+                  </>
+                )}
+
+                {detailTab === 'instances' && (
+                  <>
+                    {loadingAvailInst && (
+                      <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>Loading instances...</p>
+                    )}
+                    {!loadingAvailInst && availableInstances.length === 0 && (
+                      <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>
+                        No available instances with Project tag "{detailProject.name}"
+                      </p>
+                    )}
+                    {!loadingAvailInst && availableInstances.length > 0 && (
+                      <>
+                        <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', padding: '12px 16px 4px' }}>
+                          Instances with tag Project="{detailProject.name}" not yet in this project
+                        </div>
+                        <table className="data-table" style={{ margin: 0 }}>
+                          <thead><tr><th style={{ width: 40 }}></th><th>Name</th><th>Instance ID</th><th>State</th></tr></thead>
+                          <tbody>
+                            {availableInstances.map(inst => (
+                              <tr key={inst.instanceId} className="instance-row" style={{ cursor: 'pointer' }}
+                                onClick={() => setSelectedAddInstIds(prev => {
+                                  const next = new Set(prev)
+                                  next.has(inst.instanceId) ? next.delete(inst.instanceId) : next.add(inst.instanceId)
+                                  return next
+                                })}>
+                                <td><input type="checkbox" readOnly checked={selectedAddInstIds.has(inst.instanceId)} style={{ cursor: 'pointer' }} /></td>
+                                <td className="name-cell" style={{ fontSize: 13 }}><Server24Regular fontSize={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />{inst.name || inst.instanceId}</td>
+                                <td className="id-cell" style={{ fontSize: 12 }}>{inst.instanceId}</td>
+                                <td><div className="status-badge"><span className={`status-dot dot-${inst.state === 'running' ? 'running' : 'stopped'}`} />{inst.state}</div></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </>
+                    )}
+                  </>
+                )}
               </div>
+
               <div className="modal-footer">
-                <button className="btn-cancel" onClick={() => { setDetailProject(null); setDetailMembers([]) }}>Close</button>
+                {detailTab === 'instances' && selectedAddInstIds.size > 0 && (
+                  <button className="btn-primary" disabled={addingInstances} onClick={handleAddInstances} style={{ marginRight: 'auto' }}>
+                    {addingInstances ? 'Adding...' : `Add ${selectedAddInstIds.size} instance(s)`}
+                  </button>
+                )}
+                <button className="btn-cancel" onClick={() => { setDetailProject(null); setDetailMembers([]); setAvailableInstances([]); setSelectedAddInstIds(new Set()) }}>Close</button>
               </div>
             </div>
           </div>
@@ -415,7 +523,7 @@ export function ProjectManagement({ onToggleSidebar }: Props) {
         <div className="content-scroll" style={{ padding: '24px 32px' }}>
           <h2 style={{ marginBottom: 6 }}>Step 2: Select EC2 Instances</h2>
           <p style={{ color: 'var(--text-muted)', marginBottom: 20 }}>
-            Account: <strong>{wizardAccount?.alias}</strong> — tick instances to include in <strong>{wizardName}</strong>.
+            Account: <strong>{wizardAccount?.alias}</strong> — showing instances with tag <code>Project="{wizardName}"</code>. Tick instances to include.
           </p>
           {loadingInstances
             ? <p style={{ color: 'var(--text-muted)' }}>Loading instances...</p>
@@ -437,7 +545,7 @@ export function ProjectManagement({ onToggleSidebar }: Props) {
                     ))}
                     {accountInstances.length === 0 && (
                       <tr><td colSpan={5} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-                        No instances with <code>Restartable=true</code> tag found in this account
+                        No instances with tags <code>Restartable=true</code> and <code>Project="{wizardName}"</code> found in this account
                       </td></tr>
                     )}
                   </tbody>

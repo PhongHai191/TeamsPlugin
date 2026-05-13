@@ -150,8 +150,11 @@ export const createProject = (payload: {
 export const deleteProject = (id: string): Promise<void> =>
   api.delete(`/admin/projects/${id}`).then(r => r.data)
 
-export const listAccountInstances = (accountId: string): Promise<EC2Instance[]> =>
-  api.get(`/admin/accounts/${accountId}/instances`).then(r => r.data || [])
+export const listAccountInstances = (accountId: string, opts?: { projectName?: string; excludeProject?: string }): Promise<EC2Instance[]> =>
+  api.get(`/admin/accounts/${accountId}/instances`, { params: opts }).then(r => r.data || [])
+
+export const addProjectInstances = (projectId: string, instanceIds: string[]): Promise<Project> =>
+  api.patch(`/admin/projects/${projectId}/instances`, { instanceIds }).then(r => r.data)
 
 export const listProjectMembers = (projectId: string): Promise<ProjectMember[]> =>
   api.get(`/projects/${projectId}/members`).then(r => r.data || [])
