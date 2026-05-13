@@ -662,6 +662,22 @@ func (s *DynamoDBService) DeleteProject(ctx context.Context, projectID string) e
 	return err
 }
 
+func (s *DynamoDBService) UpdateProjectInstances(ctx context.Context, projectID string, instanceIDs []string) error {
+	ids := make([]types.AttributeValue, len(instanceIDs))
+	for i, id := range instanceIDs {
+		ids[i] = &types.AttributeValueMemberS{Value: id}
+	}
+	_, err := s.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:        aws.String(tableProjects),
+		Key:              map[string]types.AttributeValue{"projectId": &types.AttributeValueMemberS{Value: projectID}},
+		UpdateExpression: aws.String("SET instanceIds = :ids"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":ids": &types.AttributeValueMemberL{Value: ids},
+		},
+	})
+	return err
+}
+
 // ── Project Members ───────────────────────────────────────────────────────────
 
 func (s *DynamoDBService) AddProjectMember(ctx context.Context, m model.ProjectMember) error {

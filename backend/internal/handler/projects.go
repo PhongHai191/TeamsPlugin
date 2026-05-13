@@ -27,6 +27,7 @@ func (h *ProjectsHandler) ListAll(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	h.syncProjectInstances(c, projects)
 	for i := range projects {
 		members, _ := h.db.ListProjectMembers(c.Request.Context(), projects[i].ProjectID)
 		projects[i].MemberCount = len(members)
@@ -53,6 +54,7 @@ func (h *ProjectsHandler) ListMine(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	h.syncProjectInstances(c, projects)
 	for i := range projects {
 		members, _ := h.db.ListProjectMembers(c.Request.Context(), projects[i].ProjectID)
 		projects[i].MemberCount = len(members)
@@ -61,6 +63,32 @@ func (h *ProjectsHandler) ListMine(c *gin.Context) {
 		projects = []model.Project{}
 	}
 	c.JSON(http.StatusOK, projects)
+}
+
+// syncProjectInstances removes instanceIds that no longer exist on EC2.
+// It updates DynamoDB when the list changes so data stays clean at the source.
+func (h *ProjectsHandler) syncProjectInstances(c *gin.Context, projects []model.Project) {
+	ctx := c.Request.Context()
+	for i := range projects {
+		p := &projects[i]
+		if len(p.InstanceIDs) == 0 {
+			continue
+		}
+		acc, err := h.db.GetAWSAccount(ctx, p.AccountID)
+		if err != nil || acc == nil {
+			continue
+		}
+		live := h.ec2Svc.FilterExistingInstanceIDs(ctx, *acc, p.InstanceIDs)
+		if len(live) == len(p.InstanceIDs) {
+			continue // nothing changed
+		}
+		log.Printf("[project] %s: removing %d stale instanceIds (was %d, now %d)",
+			p.ProjectID, len(p.InstanceIDs)-len(live), len(p.InstanceIDs), len(live))
+		if err := h.db.UpdateProjectInstances(ctx, p.ProjectID, live); err != nil {
+			log.Printf("[project] %s: failed to update instanceIds: %v", p.ProjectID, err)
+		}
+		p.InstanceIDs = live
+	}
 }
 
 // POST /api/admin/projects — admin creates a project

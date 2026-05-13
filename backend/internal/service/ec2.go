@@ -138,6 +138,72 @@ func (s *EC2Service) listForRegion(ctx context.Context, client *ec2.Client, regi
 	return instances, nil
 }
 
+// FilterExistingInstanceIDs returns only the IDs from the given list that still
+// exist on EC2 in the given account (across all of its configured regions).
+// Instances that have been terminated or deleted on AWS will be excluded.
+func (s *EC2Service) FilterExistingInstanceIDs(ctx context.Context, account model.AWSAccount, instanceIDs []string) []string {
+	if len(instanceIDs) == 0 {
+		return instanceIDs
+	}
+
+	var clients []*ec2.Client
+	if account.RoleARN == "" {
+		for _, region := range account.Regions {
+			if c, ok := s.clients[region]; ok {
+				clients = append(clients, c)
+			} else {
+				cfg := s.baseCfg.Copy()
+				cfg.Region = region
+				clients = append(clients, ec2.NewFromConfig(cfg))
+			}
+		}
+	} else {
+		creds, err := s.assumeRole(ctx, account.RoleARN, account.ExternalID, "system-cleanup")
+		if err != nil {
+			log.Printf("[EC2] FilterExistingInstanceIDs: assumeRole failed for %s: %v", account.AccountID, err)
+			return instanceIDs // on error, keep all to avoid false removal
+		}
+		for _, region := range account.Regions {
+			cfg := s.baseCfg.Copy()
+			cfg.Region = region
+			cfg.Credentials = creds
+			clients = append(clients, ec2.NewFromConfig(cfg))
+		}
+	}
+
+	existing := map[string]bool{}
+	ids := make([]string, len(instanceIDs))
+	copy(ids, instanceIDs)
+
+	for _, client := range clients {
+		out, err := client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+			Filters: []types.Filter{
+				{Name: aws.String("instance-id"), Values: ids},
+			},
+		})
+		if err != nil {
+			log.Printf("[EC2] FilterExistingInstanceIDs: DescribeInstances error: %v", err)
+			continue
+		}
+		for _, r := range out.Reservations {
+			for _, inst := range r.Instances {
+				// exclude terminated instances — they are effectively gone
+				if inst.State.Name != types.InstanceStateNameTerminated {
+					existing[aws.ToString(inst.InstanceId)] = true
+				}
+			}
+		}
+	}
+
+	var result []string
+	for _, id := range instanceIDs {
+		if existing[id] {
+			result = append(result, id)
+		}
+	}
+	return result
+}
+
 // ── Operations ────────────────────────────────────────────────────────────────
 
 // ExecuteOperation runs an operation using hub-account credentials (no AssumeRole).
