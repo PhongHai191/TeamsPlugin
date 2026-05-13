@@ -43,8 +43,6 @@ func (h *AccountsHandler) Create(c *gin.Context) {
 		Alias:      body.Alias,
 		RoleARN:    body.RoleARN,
 		ExternalID: body.ExternalID,
-		Regions:    body.Regions,
-		Project:    body.Project,
 		AddedAt:    time.Now().UTC().Format(time.RFC3339),
 		AddedBy:    addedBy.(string),
 	}

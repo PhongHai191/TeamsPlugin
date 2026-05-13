@@ -83,14 +83,16 @@ func (s *EC2Service) ListInstancesForAccountByProjectNames(ctx context.Context, 
 func (s *EC2Service) listInstancesForAccountFiltered(ctx context.Context, account model.AWSAccount, userEmail string, allowedIDs map[string]bool) ([]model.EC2Instance, error) {
 	// Hub account: RoleARN empty — use native credentials directly
 	if account.RoleARN == "" {
+		regions, err := listEnabledRegions(ctx, s.baseCfg)
+		if err != nil {
+			log.Printf("[EC2] hub account %s DescribeRegions error: %v", account.AccountID, err)
+			return nil, err
+		}
 		var all []model.EC2Instance
-		for _, region := range account.Regions {
-			client, ok := s.clients[region]
-			if !ok {
-				cfg := s.baseCfg.Copy()
-				cfg.Region = region
-				client = ec2.NewFromConfig(cfg)
-			}
+		for _, region := range regions {
+			cfg := s.baseCfg.Copy()
+			cfg.Region = region
+			client := ec2.NewFromConfig(cfg)
 			insts, err := s.listForRegion(ctx, client, region, account.AccountID, account.Alias, allowedIDs)
 			if err != nil {
 				log.Printf("[EC2] hub account %s region %s list error: %v", account.AccountID, region, err)
@@ -105,11 +107,17 @@ func (s *EC2Service) listInstancesForAccountFiltered(ctx context.Context, accoun
 	if err != nil {
 		return nil, fmt.Errorf("account %s: %w", account.AccountID, err)
 	}
+	spokeCfg := s.baseCfg.Copy()
+	spokeCfg.Credentials = creds
+	regions, err := listEnabledRegions(ctx, spokeCfg)
+	if err != nil {
+		log.Printf("[EC2] account %s DescribeRegions error: %v", account.AccountID, err)
+		return nil, err
+	}
 	var all []model.EC2Instance
-	for _, region := range account.Regions {
-		cfg := s.baseCfg.Copy()
+	for _, region := range regions {
+		cfg := spokeCfg.Copy()
 		cfg.Region = region
-		cfg.Credentials = creds
 		client := ec2.NewFromConfig(cfg)
 		insts, err := s.listForRegion(ctx, client, region, account.AccountID, account.Alias, allowedIDs)
 		if err != nil {
@@ -119,6 +127,22 @@ func (s *EC2Service) listInstancesForAccountFiltered(ctx context.Context, accoun
 		all = append(all, insts...)
 	}
 	return all, nil
+}
+
+// listEnabledRegions returns all opted-in regions for the account using the given config.
+func listEnabledRegions(ctx context.Context, cfg aws.Config) ([]string, error) {
+	client := ec2.NewFromConfig(cfg)
+	out, err := client.DescribeRegions(ctx, &ec2.DescribeRegionsInput{
+		AllRegions: aws.Bool(false),
+	})
+	if err != nil {
+		return nil, err
+	}
+	regions := make([]string, 0, len(out.Regions))
+	for _, r := range out.Regions {
+		regions = append(regions, aws.ToString(r.RegionName))
+	}
+	return regions, nil
 }
 
 func (s *EC2Service) listForRegion(ctx context.Context, client *ec2.Client, region, accountID, accountAlias string, allowedIDs map[string]bool) ([]model.EC2Instance, error) {

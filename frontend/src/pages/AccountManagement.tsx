@@ -19,8 +19,6 @@ interface AccountForm {
   alias: string
   roleArn: string
   externalId: string
-  regions: string
-  project: string
 }
 
 const emptyForm = (): AccountForm => ({
@@ -28,8 +26,6 @@ const emptyForm = (): AccountForm => ({
   alias: '',
   roleArn: '',
   externalId: '',
-  regions: 'us-west-2',
-  project: '',
 })
 
 export function AccountManagement({ onToggleSidebar, onNavigateToProject }: Props) {
@@ -76,8 +72,6 @@ export function AccountManagement({ onToggleSidebar, onNavigateToProject }: Prop
         alias: form.alias.trim(),
         roleArn: form.roleArn.trim(),
         externalId: form.externalId.trim(),
-        regions: form.regions.split(',').map(r => r.trim()).filter(Boolean),
-        project: form.project.trim(),
       })
       setAddModalOpen(false)
       await fetchData()
@@ -146,10 +140,9 @@ export function AccountManagement({ onToggleSidebar, onNavigateToProject }: Prop
           <table className="data-table" style={{ tableLayout: 'fixed', width: '100%' }}>
             <colgroup>
               <col style={{ width: 32 }} />
-              <col style={{ width: '22%' }} />
-              <col style={{ width: '34%' }} />
+              <col style={{ width: '28%' }} />
+              <col style={{ width: '44%' }} />
               <col style={{ width: '14%' }} />
-              <col style={{ width: '12%' }} />
               <col style={{ width: 60 }} />
             </colgroup>
             <thead>
@@ -157,7 +150,6 @@ export function AccountManagement({ onToggleSidebar, onNavigateToProject }: Prop
                 <th></th>
                 <th>Account</th>
                 <th>Role ARN</th>
-                <th>Regions</th>
                 <th>Projects</th>
                 <th>Actions</th>
               </tr>
@@ -187,7 +179,6 @@ export function AccountManagement({ onToggleSidebar, onNavigateToProject }: Prop
                       <td style={{ fontSize: 12, fontFamily: 'monospace', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: acc.roleArn ? 'inherit' : 'var(--text-muted)' }}>
                         {acc.roleArn || 'hub (native creds)'}
                       </td>
-                      <td className="id-cell">{acc.regions?.join(', ')}</td>
                       <td className="id-cell" style={{ color: accProjects.length > 0 ? 'var(--accent)' : 'var(--text-muted)' }}>
                         {accProjects.length > 0 ? `${accProjects.length} project${accProjects.length > 1 ? 's' : ''}` : '—'}
                       </td>
@@ -278,16 +269,6 @@ export function AccountManagement({ onToggleSidebar, onNavigateToProject }: Prop
                   </div>
                 </div>
               )}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <label className="input-label">Regions * (comma-separated)</label>
-                  <input className="txt-input" value={form.regions} onChange={e => setForm(f => ({ ...f, regions: e.target.value }))} placeholder="us-west-2, ap-southeast-1" />
-                </div>
-                <div>
-                  <label className="input-label">Project tag</label>
-                  <input className="txt-input" value={form.project} onChange={e => setForm(f => ({ ...f, project: e.target.value }))} placeholder="CustomerA" />
-                </div>
-              </div>
             </div>
             <div className="modal-footer">
               <button className="btn-cancel" onClick={() => setAddModalOpen(false)}>Cancel</button>

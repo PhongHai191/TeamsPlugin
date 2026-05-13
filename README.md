@@ -163,16 +163,22 @@ In each AWS account you want to manage, create an IAM Role:
 **Permission policy** (attach to the role):
 ```json
 {
-  "Effect": "Allow",
-  "Action": [
-    "ec2:DescribeInstances",
-    "ec2:RebootInstances",
-    "ec2:StopInstances",
-    "ec2:StartInstances"
-  ],
-  "Resource": "*"
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "ec2:DescribeRegions",
+      "ec2:DescribeInstances",
+      "ec2:RebootInstances",
+      "ec2:StopInstances",
+      "ec2:StartInstances"
+    ],
+    "Resource": "*"
+  }]
 }
 ```
+
+> `ec2:DescribeRegions` is required — the app auto-discovers all enabled regions in each account instead of requiring manual region configuration.
 
 Also add `sts:AssumeRole` to the **hub account's Lambda execution role**.
 
@@ -184,8 +190,8 @@ Also add `sts:AssumeRole` to the **hub account's Lambda execution role**.
    - **Alias** — friendly name (e.g. "Production", "Staging")
    - **Role ARN** — `arn:aws:iam::<account_id>:role/<role_name>`
    - **External ID** — click **Generate** to create one, then paste it into the IAM trust policy above
-   - **Regions** — comma-separated list of regions to scan (e.g. `us-west-2,ap-southeast-1`)
-   - **Project** — optional tag for grouping
+
+> Regions are auto-discovered via `ec2:DescribeRegions` — no manual configuration needed.
 
 3. Click **Create**
 
@@ -331,20 +337,45 @@ TeamAWSExtension/
 
 ## AWS IAM Policy
 
+### Hub account (Lambda execution role)
+
 ```json
 {
   "Version": "2012-10-17",
   "Statement": [{
     "Effect": "Allow",
     "Action": [
+      "ec2:DescribeRegions",
       "ec2:DescribeInstances",
       "ec2:RebootInstances",
+      "ec2:StopInstances",
+      "ec2:StartInstances",
       "dynamodb:GetItem",
       "dynamodb:PutItem",
       "dynamodb:UpdateItem",
       "dynamodb:Query",
       "dynamodb:Scan",
-      "cloudtrail:LookupEvents"
+      "dynamodb:DeleteItem",
+      "sts:AssumeRole"
+    ],
+    "Resource": "*"
+  }]
+}
+```
+
+### Spoke account (role assumed by hub)
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "ec2:DescribeRegions",
+      "ec2:DescribeInstances",
+      "ec2:RebootInstances",
+      "ec2:StopInstances",
+      "ec2:StartInstances"
     ],
     "Resource": "*"
   }]

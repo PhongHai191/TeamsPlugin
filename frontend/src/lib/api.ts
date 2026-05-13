@@ -120,8 +120,6 @@ export const createAccount = (payload: {
   alias: string
   roleArn: string
   externalId: string
-  regions: string[]
-  project?: string
 }): Promise<AWSAccount> =>
   api.post('/root/accounts', payload).then(r => r.data)
 
