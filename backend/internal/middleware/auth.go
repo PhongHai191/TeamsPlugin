@@ -147,7 +147,18 @@ func parseTeamsToken(tokenStr string) (*model.TeamsTokenClaims, error) {
 
 	oid, _ := mapClaims["oid"].(string)
 	name, _ := mapClaims["name"].(string)
+
+	// Teams SSO tokens may use different claim names for email depending on account type
 	email, _ := mapClaims["preferred_username"].(string)
+	if email == "" {
+		email, _ = mapClaims["email"].(string)
+	}
+	if email == "" {
+		email, _ = mapClaims["upn"].(string)
+	}
+	if email == "" {
+		email, _ = mapClaims["unique_name"].(string)
+	}
 
 	if oid == "" {
 		return nil, fmt.Errorf("missing oid claim")
