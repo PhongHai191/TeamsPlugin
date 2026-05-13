@@ -179,7 +179,6 @@ type ProjectMember struct {
 type CreateProjectBody struct {
 	Name          string   `json:"name"          binding:"required"`
 	AccountID     string   `json:"accountId"     binding:"required"`
-	InstanceIDs   []string `json:"instanceIds"`
 	ProjectAdmins []string `json:"projectAdmins"`
 	Members       []string `json:"members"`
 }

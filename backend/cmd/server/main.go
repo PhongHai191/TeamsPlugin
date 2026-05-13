@@ -108,7 +108,6 @@ func main() {
 			admin.POST("/projects", projectsHandler.Create)
 			admin.DELETE("/projects/:id", projectsHandler.Delete)
 			admin.GET("/projects/:id/members", projectsHandler.ListMembers)
-			admin.PATCH("/projects/:id/instances", projectsHandler.AddInstances)
 			admin.GET("/accounts/:id/instances", projectsHandler.ListAccountInstances)
 		}
 

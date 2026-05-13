@@ -28,7 +28,6 @@ func (h *ProjectsHandler) ListAll(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	h.syncProjectInstances(c, projects)
 	for i := range projects {
 		members, _ := h.db.ListProjectMembers(c.Request.Context(), projects[i].ProjectID)
 		projects[i].MemberCount = len(members)
@@ -55,7 +54,6 @@ func (h *ProjectsHandler) ListMine(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	h.syncProjectInstances(c, projects)
 	for i := range projects {
 		members, _ := h.db.ListProjectMembers(c.Request.Context(), projects[i].ProjectID)
 		projects[i].MemberCount = len(members)
@@ -64,45 +62,6 @@ func (h *ProjectsHandler) ListMine(c *gin.Context) {
 		projects = []model.Project{}
 	}
 	c.JSON(http.StatusOK, projects)
-}
-
-// syncProjectInstances removes instanceIds that no longer exist on EC2.
-// It updates DynamoDB when the list changes so data stays clean at the source.
-func (h *ProjectsHandler) syncProjectInstances(c *gin.Context, projects []model.Project) {
-	ctx := c.Request.Context()
-	for i := range projects {
-		p := &projects[i]
-		if len(p.InstanceIDs) == 0 {
-			continue
-		}
-		acc, err := h.db.GetAWSAccount(ctx, p.AccountID)
-		if err != nil || acc == nil {
-			continue
-		}
-		live := h.ec2Svc.FilterExistingInstanceIDs(ctx, *acc, p.InstanceIDs)
-		if len(live) == len(p.InstanceIDs) {
-			continue // nothing changed
-		}
-		liveSet := make(map[string]bool, len(live))
-		for _, id := range live {
-			liveSet[id] = true
-		}
-		var stale []string
-		for _, id := range p.InstanceIDs {
-			if !liveSet[id] {
-				stale = append(stale, id)
-			}
-		}
-		log.Printf("[project] %s: removing %d stale instanceIds (was %d, now %d)",
-			p.ProjectID, len(stale), len(p.InstanceIDs), len(live))
-		if err := h.db.UpdateProjectInstances(ctx, p.ProjectID, live); err != nil {
-			log.Printf("[project] %s: failed to update instanceIds: %v", p.ProjectID, err)
-		}
-		if err := h.db.DenyPendingRequestsForInstances(ctx, stale); err != nil {
-			log.Printf("[project] %s: failed to deny stale requests: %v", p.ProjectID, err)
-		}
-		p.InstanceIDs = live
-	}
 }
 
 // POST /api/admin/projects — admin creates a project
@@ -115,10 +74,9 @@ func (h *ProjectsHandler) Create(c *gin.Context) {
 	createdBy := c.GetString(middleware.ContextKeyUserID)
 
 	p := model.Project{
-		Name:        body.Name,
-		AccountID:   body.AccountID,
-		InstanceIDs: body.InstanceIDs,
-		CreatedBy:   createdBy,
+		Name:      body.Name,
+		AccountID: body.AccountID,
+		CreatedBy: createdBy,
 	}
 	created, err := h.db.CreateProject(c.Request.Context(), p)
 	if err != nil {
@@ -175,9 +133,8 @@ func (h *ProjectsHandler) Delete(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 
-// GET /api/admin/accounts/:id/instances — load instances from an account (for create project form)
+// GET /api/admin/accounts/:id/instances — load instances from an account
 // Optional query param: ?projectName=X  → only return instances whose Project tag matches X (case-insensitive)
-// Optional query param: ?excludeProject=id → exclude instances already in the given project
 func (h *ProjectsHandler) ListAccountInstances(c *gin.Context) {
 	accountID := c.Param("id")
 	acc, err := h.db.GetAWSAccount(c.Request.Context(), accountID)
@@ -195,7 +152,6 @@ func (h *ProjectsHandler) ListAccountInstances(c *gin.Context) {
 		insts = []model.EC2Instance{}
 	}
 
-	// Filter by Project tag if requested
 	if projectName := c.Query("projectName"); projectName != "" {
 		needle := strings.ToLower(projectName)
 		filtered := insts[:0]
@@ -207,61 +163,7 @@ func (h *ProjectsHandler) ListAccountInstances(c *gin.Context) {
 		insts = filtered
 	}
 
-	// Exclude instances already belonging to a given project
-	if excludeID := c.Query("excludeProject"); excludeID != "" {
-		proj, err := h.db.GetProject(c.Request.Context(), excludeID)
-		if err == nil && proj != nil {
-			existing := make(map[string]bool, len(proj.InstanceIDs))
-			for _, id := range proj.InstanceIDs {
-				existing[id] = true
-			}
-			filtered := insts[:0]
-			for _, inst := range insts {
-				if !existing[inst.InstanceID] {
-					filtered = append(filtered, inst)
-				}
-			}
-			insts = filtered
-		}
-	}
-
 	c.JSON(http.StatusOK, insts)
-}
-
-// PATCH /api/admin/projects/:id/instances — add instances to an existing project
-func (h *ProjectsHandler) AddInstances(c *gin.Context) {
-	projectID := c.Param("id")
-	proj, err := h.db.GetProject(c.Request.Context(), projectID)
-	if err != nil || proj == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
-		return
-	}
-
-	var body struct {
-		InstanceIDs []string `json:"instanceIds" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	existing := make(map[string]bool, len(proj.InstanceIDs))
-	for _, id := range proj.InstanceIDs {
-		existing[id] = true
-	}
-	merged := append([]string{}, proj.InstanceIDs...)
-	for _, id := range body.InstanceIDs {
-		if !existing[id] {
-			merged = append(merged, id)
-		}
-	}
-
-	if err := h.db.UpdateProjectInstances(c.Request.Context(), projectID, merged); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	proj.InstanceIDs = merged
-	c.JSON(http.StatusOK, proj)
 }
 
 // GET /api/admin/projects/:id/members — admin or project admin lists members

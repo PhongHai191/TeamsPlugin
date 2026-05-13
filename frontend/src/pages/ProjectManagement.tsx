@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
 import {
-  listAllProjects, deleteProject, listAccounts, listAccountInstances,
+  listAllProjects, deleteProject, listAccounts,
   listUsers, createProject, listProjectMembers, addProjectMember,
-  removeProjectMember, updateProjectMemberRole, addProjectInstances,
+  removeProjectMember, updateProjectMemberRole,
 } from '../lib/api'
-import type { AWSAccount, EC2Instance, Project, ProjectMember, User } from '../types'
+import type { AWSAccount, Project, ProjectMember, User } from '../types'
 import {
   Navigation24Regular, FolderOpen24Regular, Add24Regular, Delete24Regular,
-  People24Regular, Server24Regular, ArrowClockwise20Regular, ArrowLeft24Regular,
+  People24Regular, ArrowClockwise20Regular, ArrowLeft24Regular,
   CheckmarkCircle24Regular, ArrowSwap24Regular,
 } from '@fluentui/react-icons'
 import { ConfirmDialog } from '../components/ConfirmDialog'
@@ -18,7 +18,7 @@ interface Props {
   onProjectsChange?: () => void
 }
 
-type Step = 'list' | 'create-account' | 'create-instances' | 'create-members'
+type Step = 'list' | 'create-account' | 'create-members'
 
 export function ProjectManagement({ onToggleSidebar, onProjectsChange }: Props) {
   const [projects, setProjects] = useState<Project[]>([])
@@ -30,20 +30,12 @@ export function ProjectManagement({ onToggleSidebar, onProjectsChange }: Props) 
   // Detail modal
   const [detailProject, setDetailProject] = useState<Project | null>(null)
   const [detailMembers, setDetailMembers] = useState<ProjectMember[]>([])
-  const [detailTab, setDetailTab] = useState<'members' | 'instances'>('members')
-  const [availableInstances, setAvailableInstances] = useState<EC2Instance[]>([])
-  const [loadingAvailInst, setLoadingAvailInst] = useState(false)
-  const [selectedAddInstIds, setSelectedAddInstIds] = useState<Set<string>>(new Set())
-  const [addingInstances, setAddingInstances] = useState(false)
 
   // Create wizard state
   const [accounts, setAccounts] = useState<AWSAccount[]>([])
   const [allUsers, setAllUsers] = useState<User[]>([])
   const [wizardName, setWizardName] = useState('')
   const [wizardAccount, setWizardAccount] = useState<AWSAccount | null>(null)
-  const [accountInstances, setAccountInstances] = useState<EC2Instance[]>([])
-  const [loadingInstances, setLoadingInstances] = useState(false)
-  const [selectedInstanceIds, setSelectedInstanceIds] = useState<Set<string>>(new Set())
   const [projectAdmins, setProjectAdmins] = useState<Set<string>>(new Set())
   const [projectMembers, setProjectMembers] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
@@ -61,8 +53,6 @@ export function ProjectManagement({ onToggleSidebar, onProjectsChange }: Props) 
   const openCreateWizard = async () => {
     setWizardName('')
     setWizardAccount(null)
-    setAccountInstances([])
-    setSelectedInstanceIds(new Set())
     setProjectAdmins(new Set())
     setProjectMembers(new Set())
     const [accs, users] = await Promise.all([
@@ -74,27 +64,9 @@ export function ProjectManagement({ onToggleSidebar, onProjectsChange }: Props) 
     setStep('create-account')
   }
 
-  const handleSelectAccount = async (acc: AWSAccount) => {
+  const handleSelectAccount = (acc: AWSAccount) => {
     setWizardAccount(acc)
-    setLoadingInstances(true)
-    setAccountInstances([])
-    setSelectedInstanceIds(new Set())
-    try {
-      const insts = await listAccountInstances(acc.accountId, { projectName: wizardName })
-      setAccountInstances(insts)
-    } catch {
-      showToast('Failed to load instances from this account')
-    }
-    setLoadingInstances(false)
-    setStep('create-instances')
-  }
-
-  const toggleInstance = (id: string) => {
-    setSelectedInstanceIds(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
+    setStep('create-members')
   }
 
   const toggleAdmin = (uid: string) => {
@@ -126,7 +98,6 @@ export function ProjectManagement({ onToggleSidebar, onProjectsChange }: Props) 
       await createProject({
         name: wizardName.trim(),
         accountId: wizardAccount.accountId,
-        instanceIds: Array.from(selectedInstanceIds),
         projectAdmins: Array.from(projectAdmins),
         members: Array.from(projectMembers),
       })
@@ -142,45 +113,12 @@ export function ProjectManagement({ onToggleSidebar, onProjectsChange }: Props) 
 
   const openDetail = async (p: Project) => {
     setDetailProject(p)
-    setDetailTab('members')
-    setAvailableInstances([])
-    setSelectedAddInstIds(new Set())
     const [members, users] = await Promise.all([
       listProjectMembers(p.projectId).catch(() => [] as ProjectMember[]),
       allUsers.length > 0 ? Promise.resolve(allUsers) : listUsers().catch(() => [] as User[]),
     ])
     setDetailMembers(members)
     if (allUsers.length === 0) setAllUsers(users)
-  }
-
-  const loadAvailableInstances = async (p: Project) => {
-    setLoadingAvailInst(true)
-    try {
-      const insts = await listAccountInstances(p.accountId, {
-        projectName: p.name,
-        excludeProject: p.projectId,
-      })
-      setAvailableInstances(insts)
-    } catch {
-      showToast('Failed to load instances')
-    }
-    setLoadingAvailInst(false)
-  }
-
-  const handleAddInstances = async () => {
-    if (!detailProject || selectedAddInstIds.size === 0) return
-    setAddingInstances(true)
-    try {
-      const updated = await addProjectInstances(detailProject.projectId, Array.from(selectedAddInstIds))
-      setDetailProject(updated)
-      setProjects(prev => prev.map(p => p.projectId === updated.projectId ? { ...p, instanceIds: updated.instanceIds } : p))
-      setAvailableInstances(prev => prev.filter(i => !selectedAddInstIds.has(i.instanceId)))
-      setSelectedAddInstIds(new Set())
-      showToast(`${selectedAddInstIds.size} instance(s) added`, 'success')
-    } catch (e: any) {
-      showToast(e?.response?.data?.error || 'Failed to add instances')
-    }
-    setAddingInstances(false)
   }
 
   const handleDetailRemove = async (uid: string) => {
@@ -248,7 +186,7 @@ export function ProjectManagement({ onToggleSidebar, onProjectsChange }: Props) 
             <div className="hero-left">
               <div className="date-block highlight-badge"><div className="date-num lg-num">{projects.length}</div></div>
               <div className="hero-icon"><FolderOpen24Regular style={{ fontSize: 42 }} /></div>
-              <div className="greeting-block"><h1>Project Management</h1><p>Group EC2 instances into projects and assign access</p></div>
+              <div className="greeting-block"><h1>Project Management</h1><p>Instances are auto-included by matching the <code>Project</code> EC2 tag to the project name</p></div>
             </div>
             <div className="hero-right">
               <button className="btn-ghost" onClick={fetchProjects} disabled={loading}>
@@ -260,14 +198,13 @@ export function ProjectManagement({ onToggleSidebar, onProjectsChange }: Props) 
           <div className="table-container">
             <table className="data-table">
               <thead>
-                <tr><th>Project</th><th>Account</th><th>Instances</th><th>Members</th><th>Created</th><th>Actions</th></tr>
+                <tr><th>Project</th><th>Account</th><th>Members</th><th>Created</th><th>Actions</th></tr>
               </thead>
               <tbody>
                 {projects.map(p => (
                   <tr key={p.projectId} className="instance-row">
                     <td className="name-cell" style={{ fontWeight: 600 }}>{p.name}</td>
                     <td className="id-cell">{p.accountId}</td>
-                    <td className="id-cell">{p.instanceIds?.length ?? 0}</td>
                     <td className="id-cell">
                       <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         <People24Regular fontSize={14} /> {p.memberCount ?? 0}
@@ -285,7 +222,7 @@ export function ProjectManagement({ onToggleSidebar, onProjectsChange }: Props) 
                   </tr>
                 ))}
                 {projects.length === 0 && !loading && (
-                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
+                  <tr><td colSpan={5} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
                     No projects yet — click "New Project" to create one
                   </td></tr>
                 )}
@@ -294,145 +231,76 @@ export function ProjectManagement({ onToggleSidebar, onProjectsChange }: Props) 
           </div>
         </div>
 
-        {/* Project detail modal */}
+        {/* Members detail modal */}
         {detailProject && (
           <div className="modal">
-            <div className="modal-card" style={{ width: 560 }}>
+            <div className="modal-card" style={{ width: 520 }}>
               <div className="modal-header">
-                <span className="modal-icon"><FolderOpen24Regular style={{ fontSize: 28 }} /></span>
-                <div><h2>{detailProject.name}</h2><p className="modal-subtitle">{detailProject.accountId}</p></div>
+                <span className="modal-icon"><People24Regular style={{ fontSize: 28 }} /></span>
+                <div><h2>{detailProject.name}</h2><p className="modal-subtitle">{detailMembers.length} members</p></div>
               </div>
-
-              {/* Tab bar */}
-              <div style={{ display: 'flex', borderBottom: '1px solid var(--border-light)', padding: '0 16px' }}>
-                {(['members', 'instances'] as const).map(tab => (
-                  <button key={tab} onClick={() => {
-                    setDetailTab(tab)
-                    if (tab === 'instances' && availableInstances.length === 0 && !loadingAvailInst) {
-                      loadAvailableInstances(detailProject)
-                    }
-                  }} style={{
-                    background: 'none', border: 'none', cursor: 'pointer', padding: '10px 16px',
-                    fontSize: 13, fontWeight: detailTab === tab ? 600 : 400,
-                    color: detailTab === tab ? 'var(--accent)' : 'var(--text-muted)',
-                    borderBottom: detailTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
-                    marginBottom: -1,
-                  }}>
-                    {tab === 'members' ? <><People24Regular fontSize={14} style={{ marginRight: 5, verticalAlign: 'middle' }} />Members ({detailMembers.length})</> : <><Server24Regular fontSize={14} style={{ marginRight: 5, verticalAlign: 'middle' }} />Instances ({detailProject.instanceIds?.length ?? 0})</>}
-                  </button>
-                ))}
-              </div>
-
-              <div className="modal-body" style={{ maxHeight: 400, overflowY: 'auto', padding: 0 }}>
-                {detailTab === 'members' && (
-                  <>
-                    {detailMembers.length > 0 && (
+              <div className="modal-body" style={{ maxHeight: 420, overflowY: 'auto', padding: 0 }}>
+                {detailMembers.length > 0 && (
+                  <table className="data-table" style={{ margin: 0 }}>
+                    <thead><tr><th>User</th><th>Role</th><th style={{ width: 80 }}></th></tr></thead>
+                    <tbody>
+                      {detailMembers.map(m => (
+                        <tr key={m.userId} className="instance-row">
+                          <td className="name-cell" style={{ fontSize: 13 }}>{m.userName || m.userId}</td>
+                          <td>
+                            <span style={{ background: m.role === 'admin' ? 'rgba(123,104,238,0.15)' : 'rgba(80,200,120,0.15)', color: m.role === 'admin' ? '#7b68ee' : '#50c878', borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>
+                              {m.role}
+                            </span>
+                          </td>
+                          <td className="action-cell">
+                            <button className="btn-icon-action" title={m.role === 'admin' ? 'Demote to member' : 'Promote to admin'} style={{ color: '#7b68ee' }} onClick={() => handleDetailToggleRole(m)}>
+                              <ArrowSwap24Regular fontSize={15} />
+                            </button>
+                            <button className="btn-icon-action" title="Remove from project" style={{ color: 'var(--status-stopped)' }} onClick={() => handleDetailRemove(m.userId)}>
+                              <Delete24Regular fontSize={15} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {detailMembers.length === 0 && (
+                  <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>No members yet</p>
+                )}
+                {(() => {
+                  const assignedIds = new Set(detailMembers.map(m => m.userId))
+                  const available = allUsers.filter(u => u.role === 'user' && !assignedIds.has(u.teamsUserId))
+                  if (available.length === 0) return null
+                  return (
+                    <>
+                      <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', padding: '12px 16px 4px', borderTop: '1px solid var(--border-light)' }}>Add User</div>
                       <table className="data-table" style={{ margin: 0 }}>
-                        <thead><tr><th>User</th><th>Role</th><th style={{ width: 80 }}></th></tr></thead>
                         <tbody>
-                          {detailMembers.map(m => (
-                            <tr key={m.userId} className="instance-row">
-                              <td className="name-cell" style={{ fontSize: 13 }}>{m.userName || m.userId}</td>
-                              <td>
-                                <span style={{ background: m.role === 'admin' ? 'rgba(123,104,238,0.15)' : 'rgba(80,200,120,0.15)', color: m.role === 'admin' ? '#7b68ee' : '#50c878', borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>
-                                  {m.role}
-                                </span>
+                          {available.map(u => (
+                            <tr key={u.teamsUserId} className="instance-row">
+                              <td className="name-cell" style={{ fontSize: 13 }}>
+                                <div>{u.displayName}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{u.email}</div>
                               </td>
                               <td className="action-cell">
-                                <button className="btn-icon-action" title={m.role === 'admin' ? 'Demote to member' : 'Promote to admin'} style={{ color: '#7b68ee' }} onClick={() => handleDetailToggleRole(m)}>
-                                  <ArrowSwap24Regular fontSize={15} />
+                                <button className="btn-action btn-action-success" style={{ fontSize: 12 }} onClick={() => handleDetailAddMember(u.teamsUserId, 'member')}>
+                                  <Add24Regular fontSize={13} style={{ marginRight: 3 }} />Member
                                 </button>
-                                <button className="btn-icon-action" title="Remove from project" style={{ color: 'var(--status-stopped)' }} onClick={() => handleDetailRemove(m.userId)}>
-                                  <Delete24Regular fontSize={15} />
+                                <button className="btn-action" style={{ fontSize: 12, color: '#7b68ee', borderColor: 'rgba(123,104,238,0.3)' }} onClick={() => handleDetailAddMember(u.teamsUserId, 'admin')}>
+                                  <Add24Regular fontSize={13} style={{ marginRight: 3 }} />Admin
                                 </button>
                               </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
-                    )}
-                    {detailMembers.length === 0 && (
-                      <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>No members yet</p>
-                    )}
-                    {(() => {
-                      const assignedIds = new Set(detailMembers.map(m => m.userId))
-                      const available = allUsers.filter(u => u.role === 'user' && !assignedIds.has(u.teamsUserId))
-                      if (available.length === 0) return null
-                      return (
-                        <>
-                          <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', padding: '12px 16px 4px', borderTop: '1px solid var(--border-light)' }}>Add User</div>
-                          <table className="data-table" style={{ margin: 0 }}>
-                            <tbody>
-                              {available.map(u => (
-                                <tr key={u.teamsUserId} className="instance-row">
-                                  <td className="name-cell" style={{ fontSize: 13 }}>
-                                    <div>{u.displayName}</div>
-                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{u.email}</div>
-                                  </td>
-                                  <td className="action-cell">
-                                    <button className="btn-action btn-action-success" style={{ fontSize: 12 }} onClick={() => handleDetailAddMember(u.teamsUserId, 'member')}>
-                                      <Add24Regular fontSize={13} style={{ marginRight: 3 }} />Member
-                                    </button>
-                                    <button className="btn-action" style={{ fontSize: 12, color: '#7b68ee', borderColor: 'rgba(123,104,238,0.3)' }} onClick={() => handleDetailAddMember(u.teamsUserId, 'admin')}>
-                                      <Add24Regular fontSize={13} style={{ marginRight: 3 }} />Admin
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </>
-                      )
-                    })()}
-                  </>
-                )}
-
-                {detailTab === 'instances' && (
-                  <>
-                    {loadingAvailInst && (
-                      <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>Loading instances...</p>
-                    )}
-                    {!loadingAvailInst && availableInstances.length === 0 && (
-                      <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>
-                        No available instances with Project tag "{detailProject.name}"
-                      </p>
-                    )}
-                    {!loadingAvailInst && availableInstances.length > 0 && (
-                      <>
-                        <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', padding: '12px 16px 4px' }}>
-                          Instances with tag Project="{detailProject.name}" not yet in this project
-                        </div>
-                        <table className="data-table" style={{ margin: 0 }}>
-                          <thead><tr><th style={{ width: 40 }}></th><th>Name</th><th>Instance ID</th><th>State</th></tr></thead>
-                          <tbody>
-                            {availableInstances.map(inst => (
-                              <tr key={inst.instanceId} className="instance-row" style={{ cursor: 'pointer' }}
-                                onClick={() => setSelectedAddInstIds(prev => {
-                                  const next = new Set(prev)
-                                  next.has(inst.instanceId) ? next.delete(inst.instanceId) : next.add(inst.instanceId)
-                                  return next
-                                })}>
-                                <td><input type="checkbox" readOnly checked={selectedAddInstIds.has(inst.instanceId)} style={{ cursor: 'pointer' }} /></td>
-                                <td className="name-cell" style={{ fontSize: 13 }}><Server24Regular fontSize={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />{inst.name || inst.instanceId}</td>
-                                <td className="id-cell" style={{ fontSize: 12 }}>{inst.instanceId}</td>
-                                <td><div className="status-badge"><span className={`status-dot dot-${inst.state === 'running' ? 'running' : 'stopped'}`} />{inst.state}</div></td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </>
-                    )}
-                  </>
-                )}
+                    </>
+                  )
+                })()}
               </div>
-
               <div className="modal-footer">
-                {detailTab === 'instances' && selectedAddInstIds.size > 0 && (
-                  <button className="btn-primary" disabled={addingInstances} onClick={handleAddInstances} style={{ marginRight: 'auto' }}>
-                    {addingInstances ? 'Adding...' : `Add ${selectedAddInstIds.size} instance(s)`}
-                  </button>
-                )}
-                <button className="btn-cancel" onClick={() => { setDetailProject(null); setDetailMembers([]); setAvailableInstances([]); setSelectedAddInstIds(new Set()) }}>Close</button>
+                <button className="btn-cancel" onClick={() => { setDetailProject(null); setDetailMembers([]) }}>Close</button>
               </div>
             </div>
           </div>
@@ -466,15 +334,17 @@ export function ProjectManagement({ onToggleSidebar, onProjectsChange }: Props) 
           </div>
         </header>
         <div className="content-scroll" style={{ padding: '24px 32px' }}>
-          <h2 style={{ marginBottom: 6 }}>New Project — Step 1: Choose AWS Account</h2>
-          <p style={{ color: 'var(--text-muted)', marginBottom: 20 }}>Select which account's instances will be in this project.</p>
+          <h2 style={{ marginBottom: 6 }}>New Project — Step 1: Name & Account</h2>
+          <p style={{ color: 'var(--text-muted)', marginBottom: 20 }}>
+            Instances with EC2 tag <code>Project=&lt;name&gt;</code> will be automatically included.
+          </p>
           <div style={{ marginBottom: 20 }}>
             <label className="input-label">Project Name *</label>
             <input className="txt-input" style={{ maxWidth: 360 }} value={wizardName} onChange={e => setWizardName(e.target.value)} placeholder="e.g. Customer A Production" />
           </div>
           <div className="table-container">
             <table className="data-table">
-              <thead><tr><th>Account</th><th>Regions</th><th>Project tag</th><th></th></tr></thead>
+              <thead><tr><th>Account</th><th>Regions</th><th></th></tr></thead>
               <tbody>
                 {accounts.map(acc => (
                   <tr key={acc.accountId} className="instance-row">
@@ -483,7 +353,6 @@ export function ProjectManagement({ onToggleSidebar, onProjectsChange }: Props) 
                       <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{acc.accountId}</div>
                     </td>
                     <td className="id-cell">{acc.regions?.join(', ')}</td>
-                    <td className="id-cell">{acc.project || '—'}</td>
                     <td>
                       <button className="btn-primary" disabled={!wizardName.trim()} onClick={() => handleSelectAccount(acc)}>
                         Select
@@ -492,7 +361,7 @@ export function ProjectManagement({ onToggleSidebar, onProjectsChange }: Props) 
                   </tr>
                 ))}
                 {accounts.length === 0 && (
-                  <tr><td colSpan={4} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No accounts added yet</td></tr>
+                  <tr><td colSpan={3} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No accounts added yet</td></tr>
                 )}
               </tbody>
             </table>
@@ -503,69 +372,13 @@ export function ProjectManagement({ onToggleSidebar, onProjectsChange }: Props) 
     )
   }
 
-  // ── Create wizard: step 2 — pick instances ────────────────────────────────
-  if (step === 'create-instances') {
-    return (
-      <div className="view-section active">
-        <header className="top-nav">
-          <div className="top-nav-left">
-            <button className="mobile-menu-btn" onClick={onToggleSidebar}><Navigation24Regular /></button>
-            <button className="btn-top-nav" onClick={() => setStep('create-account')} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <ArrowLeft24Regular fontSize={16} /> Back
-            </button>
-          </div>
-          <div className="top-nav-right">
-            <button className="btn-primary" disabled={selectedInstanceIds.size === 0} onClick={() => setStep('create-members')}>
-              Next: Add Members ({selectedInstanceIds.size} selected)
-            </button>
-          </div>
-        </header>
-        <div className="content-scroll" style={{ padding: '24px 32px' }}>
-          <h2 style={{ marginBottom: 6 }}>Step 2: Select EC2 Instances</h2>
-          <p style={{ color: 'var(--text-muted)', marginBottom: 20 }}>
-            Account: <strong>{wizardAccount?.alias}</strong> — showing instances with tag <code>Project="{wizardName}"</code>. Tick instances to include.
-          </p>
-          {loadingInstances
-            ? <p style={{ color: 'var(--text-muted)' }}>Loading instances...</p>
-            : (
-              <div className="table-container">
-                <table className="data-table">
-                  <thead><tr><th style={{ width: 40 }}></th><th>Name</th><th>Instance ID</th><th>Region</th><th>State</th></tr></thead>
-                  <tbody>
-                    {accountInstances.map(inst => (
-                      <tr key={inst.instanceId} className="instance-row" style={{ cursor: 'pointer' }} onClick={() => toggleInstance(inst.instanceId)}>
-                        <td>
-                          <input type="checkbox" readOnly checked={selectedInstanceIds.has(inst.instanceId)} style={{ cursor: 'pointer' }} />
-                        </td>
-                        <td className="name-cell"><Server24Regular fontSize={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />{inst.name || inst.instanceId}</td>
-                        <td className="id-cell">{inst.instanceId}</td>
-                        <td className="id-cell">{inst.region}</td>
-                        <td><div className="status-badge"><span className={`status-dot dot-${inst.state === 'running' ? 'running' : 'stopped'}`} />{inst.state}</div></td>
-                      </tr>
-                    ))}
-                    {accountInstances.length === 0 && (
-                      <tr><td colSpan={5} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-                        No instances with tags <code>Restartable=true</code> and <code>Project="{wizardName}"</code> found in this account
-                      </td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )
-          }
-        </div>
-        {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-      </div>
-    )
-  }
-
-  // ── Create wizard: step 3 — assign members ────────────────────────────────
+  // ── Create wizard: step 2 — assign members ────────────────────────────────
   return (
     <div className="view-section active">
       <header className="top-nav">
         <div className="top-nav-left">
           <button className="mobile-menu-btn" onClick={onToggleSidebar}><Navigation24Regular /></button>
-          <button className="btn-top-nav" onClick={() => setStep('create-instances')} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button className="btn-top-nav" onClick={() => setStep('create-account')} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <ArrowLeft24Regular fontSize={16} /> Back
           </button>
         </div>
@@ -576,9 +389,9 @@ export function ProjectManagement({ onToggleSidebar, onProjectsChange }: Props) 
         </div>
       </header>
       <div className="content-scroll" style={{ padding: '24px 32px' }}>
-        <h2 style={{ marginBottom: 6 }}>Step 3: Assign Members</h2>
+        <h2 style={{ marginBottom: 6 }}>Step 2: Assign Members</h2>
         <p style={{ color: 'var(--text-muted)', marginBottom: 20 }}>
-          Project: <strong>{wizardName}</strong> — {selectedInstanceIds.size} instance(s). Click a role to assign.
+          Project: <strong>{wizardName}</strong> in <strong>{wizardAccount?.alias}</strong>. Click a role to assign.
         </p>
         <div className="table-container">
           <table className="data-table">

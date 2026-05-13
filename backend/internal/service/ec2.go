@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudtrail"
@@ -61,6 +62,22 @@ func (s *EC2Service) ListInstancesForAccount(ctx context.Context, account model.
 // results to a specific set of instance IDs (for project-scoped user access).
 func (s *EC2Service) ListInstancesForAccountFiltered(ctx context.Context, account model.AWSAccount, userEmail string, allowedIDs map[string]bool) ([]model.EC2Instance, error) {
 	return s.listInstancesForAccountFiltered(ctx, account, userEmail, allowedIDs)
+}
+
+// ListInstancesForAccountByProjectNames lists all instances in an account and
+// returns only those whose Project tag (lower-cased) is in projectNames.
+func (s *EC2Service) ListInstancesForAccountByProjectNames(ctx context.Context, account model.AWSAccount, userEmail string, projectNames map[string]bool) ([]model.EC2Instance, error) {
+	all, err := s.listInstancesForAccountFiltered(ctx, account, userEmail, nil)
+	if err != nil {
+		return nil, err
+	}
+	filtered := all[:0]
+	for _, inst := range all {
+		if projectNames[strings.ToLower(inst.Project)] {
+			filtered = append(filtered, inst)
+		}
+	}
+	return filtered, nil
 }
 
 func (s *EC2Service) listInstancesForAccountFiltered(ctx context.Context, account model.AWSAccount, userEmail string, allowedIDs map[string]bool) ([]model.EC2Instance, error) {

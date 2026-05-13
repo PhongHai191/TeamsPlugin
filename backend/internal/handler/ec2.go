@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/seta-international/team-aws-extension/internal/middleware"
@@ -43,34 +44,32 @@ func (h *EC2Handler) ListInstances(c *gin.Context) {
 		return
 	}
 
-	// Group allowed instance IDs by accountId, track project info per instanceId
-	type projectInfo struct{ id, name string }
-	byAccount := map[string]map[string]bool{} // accountId → set of instanceIds
-	instanceProj := map[string]projectInfo{}  // instanceId → {projectId, projectName}
+	// Group by accountId → set of project names; track projectId per name
+	type projInfo struct{ id, name string }
+	byAccount := map[string][]string{}     // accountId → project names
+	projByName := map[string]projInfo{}    // lower(name) → {projectId, name}
 
 	for _, p := range projects {
-		if byAccount[p.AccountID] == nil {
-			byAccount[p.AccountID] = map[string]bool{}
-		}
-		for _, iid := range p.InstanceIDs {
-			byAccount[p.AccountID][iid] = true
-			instanceProj[iid] = projectInfo{id: p.ProjectID, name: p.Name}
-		}
+		byAccount[p.AccountID] = append(byAccount[p.AccountID], p.Name)
+		projByName[strings.ToLower(p.Name)] = projInfo{id: p.ProjectID, name: p.Name}
 	}
 
 	var all []model.EC2Instance
-	for accountID, allowedIDs := range byAccount {
+	for accountID, names := range byAccount {
 		acc, err := h.db.GetAWSAccount(c.Request.Context(), accountID)
 		if err != nil || acc == nil {
 			continue
 		}
-		insts, err := h.ec2Svc.ListInstancesForAccountFiltered(c.Request.Context(), *acc, email, allowedIDs)
+		nameSet := make(map[string]bool, len(names))
+		for _, n := range names {
+			nameSet[strings.ToLower(n)] = true
+		}
+		insts, err := h.ec2Svc.ListInstancesForAccountByProjectNames(c.Request.Context(), *acc, email, nameSet)
 		if err != nil {
 			continue
 		}
 		for i := range insts {
-			if pi, ok := instanceProj[insts[i].InstanceID]; ok {
-				insts[i].Project = pi.name
+			if pi, ok := projByName[strings.ToLower(insts[i].Project)]; ok {
 				insts[i].ProjectID = pi.id
 			}
 		}
