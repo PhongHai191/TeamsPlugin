@@ -5,7 +5,7 @@ import { BlackoutWindows } from './pages/BlackoutWindows'
 import { AccountManagement } from './pages/AccountManagement'
 import { ProjectManagement } from './pages/ProjectManagement'
 import { ProjectWorkspace } from './pages/ProjectWorkspace'
-import { listMyProjects, listAllRequests } from './lib/api'
+import { listMyProjects, listProjectRequests } from './lib/api'
 import type { Project } from './types'
 import {
   People24Regular,
@@ -46,19 +46,21 @@ export default function App() {
     }).catch(() => {})
   }, [user])
 
-  // Pending badge count for admin/root
+  // Pending badge: sum of pending requests across all projects the user can see
   useEffect(() => {
-    if (!isPrivileged) return
+    if (projects.length === 0) { setPendingCount(0); return }
     const fetch = async () => {
       try {
-        const reqs = await listAllRequests('pending')
-        setPendingCount(reqs.length)
+        const counts = await Promise.all(
+          projects.map(p => listProjectRequests(p.projectId, 'pending').then(r => r.length).catch(() => 0))
+        )
+        setPendingCount(counts.reduce((a, b) => a + b, 0))
       } catch { /* ignore */ }
     }
     fetch()
     const t = setInterval(fetch, 30000)
     return () => clearInterval(t)
-  }, [isPrivileged])
+  }, [projects])
 
   const selectedProject = projects.find(p => p.projectId === selectedProjectId) ?? null
 

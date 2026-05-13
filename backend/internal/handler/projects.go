@@ -82,10 +82,23 @@ func (h *ProjectsHandler) syncProjectInstances(c *gin.Context, projects []model.
 		if len(live) == len(p.InstanceIDs) {
 			continue // nothing changed
 		}
+		liveSet := make(map[string]bool, len(live))
+		for _, id := range live {
+			liveSet[id] = true
+		}
+		var stale []string
+		for _, id := range p.InstanceIDs {
+			if !liveSet[id] {
+				stale = append(stale, id)
+			}
+		}
 		log.Printf("[project] %s: removing %d stale instanceIds (was %d, now %d)",
-			p.ProjectID, len(p.InstanceIDs)-len(live), len(p.InstanceIDs), len(live))
+			p.ProjectID, len(stale), len(p.InstanceIDs), len(live))
 		if err := h.db.UpdateProjectInstances(ctx, p.ProjectID, live); err != nil {
 			log.Printf("[project] %s: failed to update instanceIds: %v", p.ProjectID, err)
+		}
+		if err := h.db.DenyPendingRequestsForInstances(ctx, stale); err != nil {
+			log.Printf("[project] %s: failed to deny stale requests: %v", p.ProjectID, err)
 		}
 		p.InstanceIDs = live
 	}

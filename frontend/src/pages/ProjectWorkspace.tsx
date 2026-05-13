@@ -110,6 +110,9 @@ export function ProjectWorkspace({ project, user, onToggleSidebar }: Props) {
         setMyProjectRole(me?.role === 'admin' ? 'admin' : 'member')
       }).catch(() => setMyProjectRole('member'))
     }
+
+    // Pre-fetch requests to show badge count without requiring tab click
+    listProjectRequests(project.projectId).then(setRequests).catch(() => {})
   }, [project.projectId])
 
   useEffect(() => {

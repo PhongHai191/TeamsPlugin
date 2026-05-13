@@ -678,6 +678,49 @@ func (s *DynamoDBService) UpdateProjectInstances(ctx context.Context, projectID 
 	return err
 }
 
+// DenyPendingRequestsForInstances denies all pending requests whose instanceId
+// is in the given list. Used when instances are detected as terminated on AWS.
+func (s *DynamoDBService) DenyPendingRequestsForInstances(ctx context.Context, instanceIDs []string) error {
+	if len(instanceIDs) == 0 {
+		return nil
+	}
+	terminated := make(map[string]bool, len(instanceIDs))
+	for _, id := range instanceIDs {
+		terminated[id] = true
+	}
+	// Scan all pending requests, then deny those matching terminated instances
+	out, err := s.client.Scan(ctx, &dynamodb.ScanInput{
+		TableName:        aws.String(tableRequests),
+		FilterExpression: aws.String("#s = :pending"),
+		ExpressionAttributeNames:  map[string]string{"#s": "status"},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pending": &types.AttributeValueMemberS{Value: string(model.StatusPending)},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, item := range out.Items {
+		var req model.RestartRequest
+		if attributevalue.UnmarshalMap(item, &req) != nil || !terminated[req.InstanceID] {
+			continue
+		}
+		s.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+			TableName: aws.String(tableRequests),
+			Key:       map[string]types.AttributeValue{"requestId": &types.AttributeValueMemberS{Value: req.RequestID}},
+			UpdateExpression: aws.String("SET #s = :denied, denyReason = :dr, updatedAt = :now"),
+			ExpressionAttributeNames: map[string]string{"#s": "status"},
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":denied": &types.AttributeValueMemberS{Value: string(model.StatusDenied)},
+				":dr":     &types.AttributeValueMemberS{Value: "Instance terminated on AWS"},
+				":now":    &types.AttributeValueMemberS{Value: now},
+			},
+		})
+	}
+	return nil
+}
+
 // ── Project Members ───────────────────────────────────────────────────────────
 
 func (s *DynamoDBService) AddProjectMember(ctx context.Context, m model.ProjectMember) error {
