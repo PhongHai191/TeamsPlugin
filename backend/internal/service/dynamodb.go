@@ -623,6 +623,21 @@ func (s *DynamoDBService) ListAllProjects(ctx context.Context) ([]model.Project,
 	return projects, attributevalue.UnmarshalListOfMaps(out.Items, &projects)
 }
 
+func (s *DynamoDBService) ListProjectsByAccount(ctx context.Context, accountID string) ([]model.Project, error) {
+	out, err := s.client.Scan(ctx, &dynamodb.ScanInput{
+		TableName:        aws.String(tableProjects),
+		FilterExpression: aws.String("accountId = :aid"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":aid": &types.AttributeValueMemberS{Value: accountID},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var projects []model.Project
+	return projects, attributevalue.UnmarshalListOfMaps(out.Items, &projects)
+}
+
 // DeleteProject removes the project, all its members, and denies pending requests belonging to it.
 func (s *DynamoDBService) DeleteProject(ctx context.Context, projectID string) error {
 	// Deny pending requests for this project

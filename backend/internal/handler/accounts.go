@@ -56,7 +56,22 @@ func (h *AccountsHandler) Create(c *gin.Context) {
 
 // DELETE /api/root/accounts/:id
 func (h *AccountsHandler) Delete(c *gin.Context) {
-	if err := h.db.DeleteAWSAccount(c.Request.Context(), c.Param("id")); err != nil {
+	ctx := c.Request.Context()
+	accountID := c.Param("id")
+
+	projects, err := h.db.ListProjectsByAccount(ctx, accountID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list projects: " + err.Error()})
+		return
+	}
+	for _, p := range projects {
+		if err := h.db.DeleteProject(ctx, p.ProjectID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete project " + p.ProjectID + ": " + err.Error()})
+			return
+		}
+	}
+
+	if err := h.db.DeleteAWSAccount(ctx, accountID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
