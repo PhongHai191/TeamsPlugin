@@ -25,10 +25,55 @@ Teams Tab (React + Vite)
         ▼
 Go API Server (Gin) — Lambda / port 8081
         │
-        ├── DynamoDB ── users, restart-requests, blackout-windows, aws-accounts, account-members
-        ├── AWS EC2  ── DescribeInstances, Reboot/Stop/StartInstances (hub account)
+        ├── DynamoDB ── users, restart-requests, blackout-windows, aws-accounts, projects, project-members
+        ├── AWS EC2  ── DescribeRegions, DescribeInstances, Reboot/Stop/StartInstances
         ├── STS      ── AssumeRole → EC2 in spoke accounts
         └── CloudTrail── LookupEvents (operation history)
+```
+
+## Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    actor Dev as DevOps Engineer
+    participant Teams as MS Teams<br/>(Entra ID)
+    participant BE as Backend<br/>(Go – Hub Account)
+    participant DB as DynamoDB
+    participant STS as AWS STS (Hub)
+    participant EC2 as AWS EC2<br/>(Spoke Account)
+
+    rect rgb(255, 248, 220)
+        Note over Dev,DB: Giai đoạn 1 — Xác thực (Authentication)
+        Dev->>Teams: 1. Mở Teams Tab
+        Teams-->>Dev: 2. Trả về SSO JWT (chứa oid, email)
+        Dev->>BE: 3. Gọi API + Bearer JWT
+        BE->>BE: 4. Validate chữ ký JWT<br/>qua MS JWKS endpoint
+        BE->>DB: 5. GetOrCreateUser(oid, email)
+        DB-->>BE: 6. Trả về User + Role<br/>(user / admin / root)
+        BE-->>Dev: 7. Xác thực thành công
+    end
+
+    rect rgb(220, 240, 255)
+        Note over BE,EC2: Giai đoạn 2 — Định danh tài khoản AWS
+        BE->>DB: 8. GetAWSAccount(accountId)
+        DB-->>BE: 9. Trả về roleArn + externalId<br/>của spoke account
+    end
+
+    rect rgb(220, 255, 220)
+        Note over BE,EC2: Giai đoạn 3 — Mượn quyền chéo (AssumeRole)
+        BE->>STS: 10. sts:AssumeRole(<br/>  RoleArn,<br/>  ExternalId,<br/>  RoleSessionName = email<br/>)
+        STS-->>BE: 11. Cấp Temporary Credentials<br/>(sống 15 phút)
+        Note over BE: 12. Backend chuyển sang<br/>dùng credentials của spoke account
+    end
+
+    rect rgb(255, 220, 220)
+        Note over BE,EC2: Giai đoạn 4 — Thực thi & Audit
+        BE->>EC2: 13. ec2:DescribeInstances /<br/>RebootInstances / StopInstances / StartInstances
+        Note right of EC2: CloudTrail ghi log:<br/>User: AssumedRole/.../email
+        EC2-->>BE: 14. HTTP 200 Success
+        BE->>DB: 15. Lưu kết quả vào DynamoDB
+        BE-->>Dev: 16. Phản hồi thành công
+    end
 ```
 
 ---
